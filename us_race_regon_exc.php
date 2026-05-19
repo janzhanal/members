@@ -115,7 +115,7 @@ if ($kat != '')
 			if ($has_ext_id && $inserted_or_updated_id > 0 && $sync_action !== '') {
 				global $g_oris_club_key;
 				if (!empty($g_oris_club_key)) {
-					$service = new OrisIntegrationService($g_oris_club_key);
+					$service = OrisIntegrationServiceFactory::create();
 					$rowQuery = query_db("SELECT * FROM `" . TBL_ZAVXUS . "` WHERE `id` = " . (int)$inserted_or_updated_id);
 					if ($rowQuery && $syncRow = mysqli_fetch_assoc($rowQuery)) {
 						$syncRes = processEntry($syncRow, $sync_action, $service);
@@ -134,7 +134,7 @@ if ($kat != '')
 								$prev_sedadel = (!isset($previous_state['sedadel']) || $previous_state['sedadel'] === null) ? 'null' : (int)$previous_state['sedadel'];
 								$prev_ubytovani = (!isset($previous_state['ubytovani']) || $previous_state['ubytovani'] === null) ? 'null' : (int)$previous_state['ubytovani'];
 								$prev_sync_status = correct_sql_string($previous_state['sync_status']);
-								
+
 								query_db("UPDATE ".TBL_ZAVXUS." SET kat='$prev_kat', pozn='$prev_pozn', pozn_in='$prev_pozn_in', termin='$prev_termin', transport=$prev_transport, sedadel=$prev_sedadel, ubytovani=$prev_ubytovani, sync_status='$prev_sync_status' WHERE id='$inserted_or_updated_id'");
 							}
 						}

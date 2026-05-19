@@ -52,7 +52,7 @@ function startsWith( $haystack, $needle ) {
 }
 
 require_once './lib/OrisIntegrationService.php';
-$service = new OrisIntegrationService(null);
+$service = OrisIntegrationServiceFactory::create();
 $obj = $service->getRegistration(1, $ORIS_year);
 
 $arr_oris = array();

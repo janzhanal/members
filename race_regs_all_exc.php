@@ -162,7 +162,7 @@ $sync_errors = [];
 if ($has_ext_id && count($sync_queue) > 0) {
 	global $g_oris_club_key, $g_shortcut;
 	if (!empty($g_oris_club_key)) {
-		$service = new OrisIntegrationService($g_oris_club_key);
+		$service = OrisIntegrationServiceFactory::create();
 		foreach ($sync_queue as $sq) {
 			$rowQuery = query_db("SELECT z.*, u.reg FROM `" . TBL_ZAVXUS . "` z LEFT JOIN `" . TBL_USER . "` u ON z.id_user = u.id WHERE z.`id` = " . (int)$sq['id']);
 			if ($rowQuery && $syncRow = mysqli_fetch_assoc($rowQuery)) {
@@ -199,7 +199,7 @@ if ($has_ext_id && count($sync_queue) > 0) {
 							$prev_sedadel = (!isset($sq['previous_state']['sedadel']) || $sq['previous_state']['sedadel'] === null) ? 'null' : (int)$sq['previous_state']['sedadel'];
 							$prev_ubytovani = (!isset($sq['previous_state']['ubytovani']) || $sq['previous_state']['ubytovani'] === null) ? 'null' : (int)$sq['previous_state']['ubytovani'];
 							$prev_sync_status = correct_sql_string($sq['previous_state']['sync_status']);
-							
+
 							query_db("UPDATE ".TBL_ZAVXUS." SET kat='$prev_kat', pozn='$prev_pozn', pozn_in='$prev_pozn_in', termin='$prev_termin', transport=$prev_transport, sedadel=$prev_sedadel, ubytovani=$prev_ubytovani, sync_status='$prev_sync_status' WHERE id='{$sq['id']}'");
 						}
 					}
@@ -208,7 +208,6 @@ if ($has_ext_id && count($sync_queue) > 0) {
 		}
 	}
 }
-
 ?>
 <?php 
 if (!empty($sync_errors)) { 

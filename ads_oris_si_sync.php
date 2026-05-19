@@ -8,6 +8,7 @@ require_once ("./connect.inc.php");
 require_once ("./sess.inc.php");
 require_once ("./cfg/_cfg.php");
 require_once ("./common.inc.php"); // For GetFirstEmail
+require_once ("./lib/OrisIntegrationService.php");
 
 if (!IsLoggedSmallAdmin())
 {
@@ -23,14 +24,25 @@ if ($oris_id > 0 && $user_id > 0)
     db_Connect();
     $vysledek=query_db("SELECT * FROM ".TBL_USER." WHERE id = '$user_id' LIMIT 1");
     $zaznam=mysqli_fetch_array($vysledek);
+    $clubKey = OrisIntegrationServiceFactory::getConfiguredClubKey();
 
     if ($zaznam)
     {
+        if (empty($clubKey)) {
+            require_once ("./header.inc.php");
+            DrawPageTitle('Chyba synchronizace s ORIS');
+            echo "Nepodařilo se aktualizovat údaje v systému ORIS.<br>";
+            echo "<b>Warning: API key is empty!</b><br>";
+            echo "<br><a href=\"".$g_baseadr."index.php?id="._SMALL_ADMIN_GROUP_ID_."&subid=2\">Zpět</a>";
+            HTML_Footer();
+            exit;
+        }
+
         $params = array(
             'format' => 'json',
             'method' => 'editPerson',
             'userid' => $oris_id,
-            'clubkey' => $g_oris_club_key,
+            'clubkey' => $clubKey,
             'firstname' => $zaznam['jmeno'],
             'lastname' => $zaznam['prijmeni'],
             'email' => GetFirstEmail($zaznam['email']),
@@ -43,7 +55,7 @@ if ($oris_id > 0 && $user_id > 0)
             $params['si'] = $zaznam['si_chip'];
         }
         
-        $url = "https://oris.ceskyorientak.cz/API/?" . http_build_query($params);
+        $url = OrisIntegrationServiceFactory::getConfiguredApiUrl() . '?' . http_build_query($params);
         
         // Use file_get_contents
         $response = file_get_contents($url);
@@ -62,7 +74,6 @@ if ($oris_id > 0 && $user_id > 0)
             echo "Raw response: " . htmlspecialchars($response) . "<br>";
             echo "Odpověď serveru: " . ($result ? $result->Status : "Unknown error") . "<br>";
             if (isset($result->Message)) echo "Zpráva: " . $result->Message . "<br>";
-            if (!isset($g_oris_club_key) || empty($g_oris_club_key)) echo "<b>Warning: API key is empty!</b><br>";
             echo "<br><a href=\"".$g_baseadr."index.php?id="._SMALL_ADMIN_GROUP_ID_."&subid=2\">Zpět</a>";
             HTML_Footer();
         }

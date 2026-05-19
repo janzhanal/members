@@ -22,7 +22,7 @@ function logMessage($msg) {
 }
 
 function processEntry($row, $action, $service) {
-    global $g_oris_club_key, $g_shortcut;
+    global $g_shortcut;
     
     $id = $row['id'];
     $userId = $row['id_user'];

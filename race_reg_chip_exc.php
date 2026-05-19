@@ -61,7 +61,7 @@ $sync_errors = [];
 if ($has_ext_id && count($sync_queue) > 0) {
 	global $g_oris_club_key;
 	if (!empty($g_oris_club_key)) {
-		$service = new OrisIntegrationService($g_oris_club_key);
+		$service = OrisIntegrationServiceFactory::create();
 		foreach ($sync_queue as $sq) {
 			$rowQuery = query_db("SELECT * FROM `" . TBL_ZAVXUS . "` WHERE `id` = " . (int)$sq['id']);
 			if ($rowQuery && $syncRow = mysqli_fetch_assoc($rowQuery)) {

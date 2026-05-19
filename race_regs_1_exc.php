@@ -197,7 +197,7 @@ if($termin != 0)
 							$prev_sedadel = (!isset($previous_state['sedadel']) || $previous_state['sedadel'] === null) ? 'null' : (int)$previous_state['sedadel'];
 							$prev_ubytovani = (!isset($previous_state['ubytovani']) || $previous_state['ubytovani'] === null) ? 'null' : (int)$previous_state['ubytovani'];
 							$prev_sync_status = correct_sql_string($previous_state['sync_status']);
-							
+
 							query_db("UPDATE ".TBL_ZAVXUS." SET kat='$prev_kat', pozn='$prev_pozn', pozn_in='$prev_pozn_in', termin='$prev_termin', transport=$prev_transport, sedadel=$prev_sedadel, ubytovani=$prev_ubytovani, sync_status='$prev_sync_status' WHERE id='$inserted_or_updated_id'");
 						}
 					}

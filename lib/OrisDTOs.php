@@ -1,6 +1,6 @@
 <?php
 
-class RaceDTO {
+class RaceInfo {
     public ?string $ext_id;
     public ?string $datum;
     public ?string $datum2;
@@ -30,7 +30,11 @@ class RaceDTO {
     public ?string $oris_entry_start;
     public ?string $typ0;
 
-    public function __construct(array $data) {
+    public function __construct($data = []) {
+        if (!is_array($data)) {
+            $data = [];
+        }
+
         $this->ext_id = $data['ext_id'] ?? null;
         $this->datum = $data['datum'] ?? null;
         $this->datum2 = $data['datum2'] ?? null;
