@@ -10,6 +10,22 @@ require_once __DIR__ . '/OrisDTOs.php';
 class OrisIntegrationService {
 
     public const DEFAULT_BASE_URL = 'https://oris.ceskyorientak.cz/';
+    private const CLUB_KEY_REQUIRED_METHODS = [
+        'createEntry' => true,
+        'updateEntry' => true,
+        'deleteEntry' => true,
+        'createServiceEntry' => true,
+        'updateServiceEntry' => true,
+        'deleteServiceEntry' => true,
+        'getClubEntryRights' => true,
+        'setClubEntryRights' => true,
+        'getClubUserList' => true,
+        'createPerson' => true,
+        'editPerson' => true,
+        'createClubUser' => true,
+        'editClubUser' => true,
+        'createUserLogin' => true,
+    ];
 
     private $apiUrl;
     private $clubKey;
@@ -44,10 +60,15 @@ class OrisIntegrationService {
     /**
      * Internal generic HTTP request method.
      */
-    private function makeRequest($method, $params = [], $isPost = false, $includeClubKey = false) {
+    private function makeRequest($method, $params = [], $isPost = false) {
+        $requiresClubKey = isset(self::CLUB_KEY_REQUIRED_METHODS[$method]);
+        if ($requiresClubKey && !$this->hasClubKey()) {
+            throw new OrisValidationException("ORIS method '{$method}' requires configured clubkey.");
+        }
+
         $params['method'] = $method;
         $params['format'] = 'json';
-        if ($includeClubKey && $this->clubKey) {
+        if ($requiresClubKey) {
             $params['clubkey'] = $this->clubKey;
         }
 
@@ -99,15 +120,19 @@ class OrisIntegrationService {
     // --- Write/Mutating Operations (Phase C) ---
 
     public function createEntry(OrisEntryRequestDTO $dto) {
-        return $this->makeRequest('createEntry', $dto->toArray(), true, true);
+        return $this->makeRequest('createEntry', $dto->toArray(), true);
     }
     
     public function updateEntry(OrisEntryRequestDTO $dto) {
-        return $this->makeRequest('updateEntry', $dto->toArray(), true, true);
+        return $this->makeRequest('updateEntry', $dto->toArray(), true);
     }
     
     public function deleteEntry($entryId) {
-        return $this->makeRequest('deleteEntry', ['entryid' => $entryId], true, true);
+        return $this->makeRequest('deleteEntry', ['entryid' => $entryId], true);
+    }
+
+    public function editPerson(array $params) {
+        return $this->makeRequest('editPerson', $params, true);
     }
 
     // --- Read-Only and Protected Read Endpoints (Phase A & B) ---

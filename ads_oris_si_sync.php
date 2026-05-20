@@ -24,25 +24,11 @@ if ($oris_id > 0 && $user_id > 0)
     db_Connect();
     $vysledek=query_db("SELECT * FROM ".TBL_USER." WHERE id = '$user_id' LIMIT 1");
     $zaznam=mysqli_fetch_array($vysledek);
-    $clubKey = OrisIntegrationServiceFactory::getConfiguredClubKey();
 
     if ($zaznam)
     {
-        if (empty($clubKey)) {
-            require_once ("./header.inc.php");
-            DrawPageTitle('Chyba synchronizace s ORIS');
-            echo "Nepodařilo se aktualizovat údaje v systému ORIS.<br>";
-            echo "<b>Warning: API key is empty!</b><br>";
-            echo "<br><a href=\"".$g_baseadr."index.php?id="._SMALL_ADMIN_GROUP_ID_."&subid=2\">Zpět</a>";
-            HTML_Footer();
-            exit;
-        }
-
         $params = array(
-            'format' => 'json',
-            'method' => 'editPerson',
             'userid' => $oris_id,
-            'clubkey' => $clubKey,
             'firstname' => $zaznam['jmeno'],
             'lastname' => $zaznam['prijmeni'],
             'email' => GetFirstEmail($zaznam['email']),
@@ -54,26 +40,21 @@ if ($oris_id > 0 && $user_id > 0)
         if (!empty($zaznam['si_chip']) && $zaznam['si_chip'] != 0 && $zaznam['si_chip'] !== '0') {
             $params['si'] = $zaznam['si_chip'];
         }
-        
-        $url = OrisIntegrationServiceFactory::getConfiguredApiUrl() . '?' . http_build_query($params);
-        
-        // Use file_get_contents
-        $response = file_get_contents($url);
-        $result = json_decode($response);
-        
-        if ($result && $result->Status == 'OK') {
+
+        $service = OrisIntegrationServiceFactory::create();
+
+        try {
+            $service->editPerson($params);
             // Success
             header("location: ".$g_baseadr."index.php?id="._SMALL_ADMIN_GROUP_ID_."&subid=2");
-        } else {
+        } catch (OrisException $e) {
             // Error
             require_once ("./header.inc.php"); 
             DrawPageTitle('Chyba synchronizace s ORIS');
             echo "Nepodařilo se aktualizovat údaje v systému ORIS.<br>";
             echo "<b>Debug info:</b><br>";
-            echo "URL: " . $url . "<br>";
-            echo "Raw response: " . htmlspecialchars($response) . "<br>";
-            echo "Odpověď serveru: " . ($result ? $result->Status : "Unknown error") . "<br>";
-            if (isset($result->Message)) echo "Zpráva: " . $result->Message . "<br>";
+            echo "API URL: " . htmlspecialchars($service->getApiUrl()) . "<br>";
+            echo "Zpráva: " . htmlspecialchars($e->getMessage()) . "<br>";
             echo "<br><a href=\"".$g_baseadr."index.php?id="._SMALL_ADMIN_GROUP_ID_."&subid=2\">Zpět</a>";
             HTML_Footer();
         }
