@@ -202,12 +202,15 @@ async function getRaceRegistrationRow(page, reg, options = {}) {
 async function ensureRaceParticipants(page, raceId, participants, options = {}) {
   const groupId = options.groupId || 400;
   const registrationPath = `./race_regs_all.php?gr_id=${groupId}&id=${raceId}`;
+  const participantMap = Array.isArray(participants)
+    ? Object.assign({}, ...participants)
+    : participants;
 
   await page.goto(registrationPath);
 
   const postFields = {};
 
-  for (const [reg, participant] of Object.entries(participants)) {
+  for (const [reg, participant] of Object.entries(participantMap)) {
     const row = await getRaceRegistrationRow(page, reg);
 
     if (!row || !row.userId) {
@@ -242,9 +245,9 @@ async function ensureRaceParticipants(page, raceId, participants, options = {}) 
 
   const verifiedParticipants = {};
 
-  for (const [reg, participant] of Object.entries(participants)) {
+  for (const [reg, participant] of Object.entries(participantMap)) {
     const row = await getRaceRegistrationRow(page, reg, {
-      path: reg === Object.keys(participants)[0] ? registrationPath : undefined,
+      path: reg === Object.keys(participantMap)[0] ? registrationPath : undefined,
     });
 
     if (!row) {

@@ -131,8 +131,20 @@ class OrisIntegrationService {
         return $this->makeRequest('deleteEntry', ['entryid' => $entryId], true);
     }
 
+    public function createPerson(array $params) {
+        return $this->makeRequest('createPerson', $params, true);
+    }
+
     public function editPerson(array $params) {
         return $this->makeRequest('editPerson', $params, true);
+    }
+
+    public function createClubUser(array $params) {
+        return $this->makeRequest('createClubUser', $params, true);
+    }
+
+    public function editClubUser(array $params) {
+        return $this->makeRequest('editClubUser', $params, true);
     }
 
     // --- Read-Only and Protected Read Endpoints (Phase A & B) ---

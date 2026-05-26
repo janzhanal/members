@@ -493,7 +493,7 @@ async function createRace(page, request, overrides = {}) {
     prihlasky3: '',
     prihlasky4: '',
     prihlasky5: '',
-    kategorie: overrides.categories || 'H21;D21',
+    kategorie: overrides.categories || 'D10N;D12;D14;D16;D18;D21C;D21D;D35;D45;D55;H10N;H12;H14;H16;H18;H21C;H21D;H35;H45;H55;HDR;',
     ...overrides.fields,
   });
 

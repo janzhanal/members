@@ -1162,7 +1162,8 @@ CREATE TABLE `tst_zavod` (
   `ubytovani` tinyint(1) DEFAULT NULL,
   `kapacita` smallint(6) DEFAULT NULL,
   `prihlasenych` smallint(6) NOT NULL DEFAULT 0,
-  `cancelled` tinyint(1) NOT NULL DEFAULT 0
+  `cancelled` tinyint(1) NOT NULL DEFAULT 0,
+  `oris_entry_start` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_czech_ci COMMENT='tabulka popisu zavodu';
 
 --
@@ -1237,7 +1238,11 @@ CREATE TABLE `tst_zavxus` (
   `sedadel` tinyint(1) DEFAULT NULL,
   `ubytovani` tinyint(1) DEFAULT NULL,
   `participated` tinyint(1) DEFAULT NULL,
-  `add_by_fin` tinyint(1) DEFAULT NULL
+  `add_by_fin` tinyint(1) DEFAULT NULL,
+  `oris_entry_id` int(10) UNSIGNED DEFAULT NULL,
+  `sync_status` enum('LOCAL_ONLY','SYNCED','PENDING_CREATE','PENDING_UPDATE','PENDING_DELETE','FAILED_CREATE','FAILED_UPDATE','FAILED_DELETE') NOT NULL DEFAULT 'LOCAL_ONLY',
+  `sync_timestamp` datetime DEFAULT NULL,
+  `sync_error_payload` text DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_czech_ci COMMENT='tabulka prihlasek - clovek X zavod';
 
 --
@@ -1444,7 +1449,8 @@ ALTER TABLE `tst_zavod` ADD FULLTEXT KEY `misto` (`misto`);
 ALTER TABLE `tst_zavxus`
   ADD PRIMARY KEY (`id`),
   ADD KEY `id_termin` (`termin`,`id`),
-  ADD KEY `id_user` (`id_user`);
+  ADD KEY `id_user` (`id_user`),
+  ADD KEY `sync_status` (`sync_status`);
 
 --
 -- AUTO_INCREMENT for dumped tables
