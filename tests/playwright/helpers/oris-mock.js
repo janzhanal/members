@@ -18,6 +18,22 @@ async function postJson(request, path, data = {}) {
   return response.json();
 }
 
+async function putJson(request, path, data = {}) {
+  const response = await request.put(`${DEFAULT_ORIS_MOCK_ADMIN_URL}${path}`, { data });
+  if (!response.ok()) {
+    throw new Error(`ORIS mock PUT ${path} failed with HTTP ${response.status()}: ${await response.text()}`);
+  }
+  return response.json();
+}
+
+async function deleteJson(request, path) {
+  const response = await request.delete(`${DEFAULT_ORIS_MOCK_ADMIN_URL}${path}`);
+  if (!response.ok()) {
+    throw new Error(`ORIS mock DELETE ${path} failed with HTTP ${response.status()}: ${await response.text()}`);
+  }
+  return response.json();
+}
+
 async function getJson(request, path) {
   const response = await request.get(`${DEFAULT_ORIS_MOCK_ADMIN_URL}${path}`);
   if (!response.ok()) {
@@ -57,6 +73,13 @@ async function createOrisMockRace(request, overrides = {}) {
   });
 }
 
+async function updateOrisMockRace(request, eventId, overrides = {}) {
+  return putJson(request, `/races/${eventId}`, {
+    ...overrides,
+    id: String(eventId),
+  });
+}
+
 async function createOrisMockUser(request, overrides = {}) {
   return postJson(request, '/users', {
     firstName: 'Playwright',
@@ -73,6 +96,26 @@ async function createOrisMockEntry(request, eventId, overrides = {}) {
 
 async function getOrisMockRaceEntries(request, eventId) {
   return getJson(request, `/races/${eventId}/entries`);
+}
+
+async function deleteOrisMockRaceEntry(request, eventId, entryId) {
+  return deleteJson(request, `/races/${eventId}/entries/${entryId}`);
+}
+
+async function getOrisApiEvent(request, eventId) {
+  const params = new URLSearchParams({
+    method: 'getEvent',
+    format: 'json',
+    id: String(eventId),
+  });
+  const response = await request.get(`${DEFAULT_ORIS_MOCK_API_URL}?${params.toString()}`);
+  const json = await response.json();
+
+  if (!response.ok() || json.Status !== 'OK') {
+    throw new Error(`ORIS API getEvent failed with HTTP ${response.status()}: ${JSON.stringify(json)}`);
+  }
+
+  return json.Data;
 }
 
 async function getOrisApiEventEntries(request, eventId) {
@@ -95,8 +138,11 @@ module.exports = {
   createOrisMockEntry,
   createOrisMockRace,
   createOrisMockUser,
+  deleteOrisMockRaceEntry,
+  getOrisApiEvent,
   getOrisApiEventEntries,
   getOrisMockRaceEntries,
   resetOrisMock,
   setOrisMockSettings,
+  updateOrisMockRace,
 };

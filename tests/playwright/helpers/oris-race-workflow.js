@@ -274,7 +274,33 @@ async function ensureRaceParticipants(page, raceId, participants, options = {}) 
   return verifiedParticipants;
 }
 
+async function removeRaceParticipant(page, raceId, reg, options = {}) {
+  const groupId = options.groupId || 400;
+  const registrationPath = `./race_regs_all.php?gr_id=${groupId}&id=${raceId}`;
+  const row = await getRaceRegistrationRow(page, reg, { path: registrationPath });
+
+  if (!row || !row.userId || !row.category) {
+    throw new Error(`Could not find registered race participant ${formatClubReg(reg)} on race ${raceId}`);
+  }
+
+  const fields = {
+    [`kateg[${row.userId}]`]: '',
+    [`pozn[${row.userId}]`]: '',
+    [`pozn2[${row.userId}]`]: '',
+  };
+  if (row.term !== null) {
+    fields[`term[${row.userId}]`] = String(row.term);
+  }
+
+  return postFormInSession(
+    page,
+    `./race_regs_all_exc.php?gr_id=${groupId}&id=${raceId}`,
+    fields
+  );
+}
+
 module.exports = {
   ensureOrisRace,
   ensureRaceParticipants,
+  removeRaceParticipant,
 };

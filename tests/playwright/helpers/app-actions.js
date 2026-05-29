@@ -316,6 +316,55 @@ async function ensureClubMembers(page, registrationIds, options = {}) {
   return ensuredMembers;
 }
 
+async function ensureMemberLogin(page, userId, overrides = {}) {
+  if (!userId) {
+    throw new Error('Cannot ensure a member login without a user id');
+  }
+
+  await page.goto(`./user_login_edit.php?id=${userId}&cb=700`);
+  const form = await readFormState(page, 'form[action*="type=1"], form[action*="type=2"]');
+  const createsAccount = /[?&]type=2(?:&|$)/.test(form.action);
+  const accountFields = {
+    ...form.fields,
+    action_type: '1',
+    login: overrides.login,
+    podpis: overrides.signature || overrides.login,
+  };
+
+  if (createsAccount) {
+    accountFields.nheslo = overrides.password;
+    accountFields.nheslo2 = overrides.password;
+  }
+
+  const accountResult = await postFormInSession(page, form.action, accountFields);
+  ensureHtmlSubmission(accountResult, `Ensure login for user ${userId}`);
+
+  if (!createsAccount) {
+    const passwordResult = await postFormInSession(
+      page,
+      `./user_login_edit_exc.php?type=3&id=${userId}`,
+      {
+        action_type: '1',
+        nheslo: overrides.password,
+        nheslo2: overrides.password,
+      }
+    );
+    ensureHtmlSubmission(passwordResult, `Ensure password for user ${userId}`);
+  }
+}
+
+async function setMemberSmallManager(page, userId, smallManagerId) {
+  if (!userId || !smallManagerId) {
+    throw new Error('Cannot assign a small manager without both user ids');
+  }
+
+  const result = await postFormInSession(page, `./mng_edit_exc.php?id=${userId}`, {
+    mng: String(smallManagerId),
+  });
+
+  return ensureHtmlSubmission(result, `Assign small manager for user ${userId}`);
+}
+
 async function setMemberFinanceType(page, userId, financeType) {
   if (!userId) {
     throw new Error('Cannot set member finance type without a user id');
@@ -544,6 +593,7 @@ async function submitManagedRaceRegistration(page, raceId, fields) {
 module.exports = {
   ensureClubMember,
   ensureClubMembers,
+  ensureMemberLogin,
   findRaceUserIdByReg,
   createPaymentRule,
   ensurePaymentRules,
@@ -551,6 +601,7 @@ module.exports = {
   formatClubReg,
   getFinanceDirectoryEntryByReg,
   setMemberFinanceType,
+  setMemberSmallManager,
   stornoFirstMemberFinanceEntry,
   updateFirstMemberFinanceEntry,
   submitFinanceTransferByReg,

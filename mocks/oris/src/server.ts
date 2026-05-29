@@ -116,6 +116,16 @@ function apiError(message: string): JsonObject {
   return { Status: 'ERROR', Data: message };
 }
 
+function apiClosedRegistration(method: string): JsonObject {
+  return {
+    Method: method,
+    Format: 'json',
+    Status: 'Mimo termín přihlášek',
+    ExportCreated: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    Data: [],
+  };
+}
+
 function isPlainObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -549,7 +559,7 @@ function composeClasses(baseClasses: unknown, rows: EventClassRow[], localOnly: 
     if (key) classes.set(key, item);
   }
 
-  if (localOnly && rows.filter((row) => !row.deleted).length === 0) {
+  if (localOnly && rows.length === 0) {
     for (const item of defaultClasses(eventId)) classes.set(asString(item.ID), item);
   }
 
@@ -590,7 +600,7 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
       EntryStart: orisDateTimePlus(10),
       Org1: { Abbr: config.defaultClubAbbr },
       Regions: { 1: { ID: 'JM' } },
-      Classes: defaultClasses(row.id),
+      Classes: [],
       Cancelled: 0,
     }
     : { ...upstreamEvent };
@@ -743,6 +753,32 @@ async function findEventByClass(classId: string): Promise<JsonObject | null> {
     [classId],
   );
   return classRows[0] ? getEvent(classRows[0].event_id) : null;
+}
+
+type EntryMutationValidation =
+  | { type: 'ok' }
+  | { type: 'closedRegistration' }
+  | { type: 'error'; message: string };
+
+function validateEntryMutation(event: JsonObject | null, classId: string): EntryMutationValidation {
+  if (!event) {
+    return { type: 'error', message: `Class ${classId || '(missing)'} is not defined for an event.` };
+  }
+
+  const classes = Array.isArray(event.Classes) ? event.Classes as JsonObject[] : [];
+  if (!classes.some((item) => asString(item.ID) === classId)) {
+    return { type: 'error', message: `Class ${classId || '(missing)'} is not defined for event ${asString(event.ID)}.` };
+  }
+
+  const deadline = normalizeDateTimeValue(event.EntryDate1).replace(' ', 'T');
+  if (deadline) {
+    const timestamp = Date.parse(`${deadline}Z`);
+    if (Number.isFinite(timestamp) && timestamp < Date.now()) {
+      return { type: 'closedRegistration' };
+    }
+  }
+
+  return { type: 'ok' };
 }
 
 async function saveEventClasses(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<void> {
@@ -1168,10 +1204,20 @@ async function handleGetEventServiceEntries(req: Request, res: Response): Promis
 
 async function handleCreateEntry(req: Request, res: Response): Promise<void> {
   try {
+    const classId = asString(req.body.class);
+    const event = await findEventByClass(classId);
+    const validation = validateEntryMutation(event, classId);
+    if (validation.type !== 'ok') {
+      res.json(validation.type === 'closedRegistration'
+        ? apiClosedRegistration('createEntry')
+        : apiError(validation.message));
+      return;
+    }
+
     const entry = await upsertEntry({
       ...req.body,
       clubUserId: req.body.clubuser,
-      classId: req.body.class,
+      classId,
       rentSI: req.body.rent_si,
     });
     res.json(apiOk({ ID: entry.ID, Entry: entry }));
@@ -1196,13 +1242,21 @@ async function handleUpdateEntry(req: Request, res: Response): Promise<void> {
     res.json(apiError('Entry not found'));
     return;
   }
+  const classId = asString(req.body.class ?? rows[0].class_id);
+  const validation = validateEntryMutation(await getEvent(rows[0].event_id), classId);
+  if (validation.type !== 'ok') {
+    res.json(validation.type === 'closedRegistration'
+      ? apiClosedRegistration('updateEntry')
+      : apiError(validation.message));
+    return;
+  }
   const entry = await upsertEntry({
     ...req.body,
     entryId,
     eventId: rows[0].event_id,
     proxyOnly: !!rows[0].proxy_only,
     clubUserId: req.body.clubuser ?? rows[0].club_user_id,
-    classId: req.body.class ?? rows[0].class_id,
+    classId,
     rentSI: req.body.rent_si ?? rows[0].rent_si,
   });
   res.json(apiOk({ ID: entry.ID, Entry: entry }));
@@ -1211,6 +1265,15 @@ async function handleUpdateEntry(req: Request, res: Response): Promise<void> {
 async function handleDeleteEntry(req: Request, res: Response): Promise<void> {
   const entryId = asString(req.body.entryid);
   const eventId = asString(req.body.eventid ?? req.body.eventId);
+  const [existingRows] = await pool.query<EntryRow[]>(
+    'SELECT * FROM mock_entries WHERE entry_id = ? AND deleted = 0 LIMIT 1',
+    [entryId],
+  );
+  if (!existingRows[0]) {
+    res.json(apiError('Entry not found'));
+    return;
+  }
+
   if (eventId) {
     await pool.query(
       `

@@ -11,10 +11,12 @@ const {
 const {
   ensureClubMembers,
   submitMemberRaceRegistration,
+  updateRace,
 } = require('../helpers/app-actions');
 const {
   createOrisMockRace,
   createOrisMockUser,
+  getOrisApiEvent,
   getOrisApiEventEntries,
 } = require('../helpers/oris-mock');
 const {
@@ -74,6 +76,14 @@ function regSuffix(regNo) {
   return String(regNo).replace(/^[A-Z]+/, '');
 }
 
+function formatSavedRaceDate(date) {
+  return [
+    date.getUTCDate(),
+    date.getUTCMonth() + 1,
+    date.getUTCFullYear(),
+  ].join('.');
+}
+
 test.describe(ORIS_MOCKUP_RACE_WORKFLOW.name, () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -105,15 +115,17 @@ test.describe(ORIS_MOCKUP_RACE_WORKFLOW.name, () => {
     state.orisId = String(state.mockRace.race.ID);
   });
 
-  test('registrar can load the mockup ORIS race into members', async ({ page }) => {
+  test('registrar can load the mockup ORIS race into members', async ({ page, request }) => {
     await loginAs(page, 'registrar');
 
     state.race = await ensureOrisRace(page, state.orisId);
+    const orisEvent = await getOrisApiEvent(request, state.orisId);
 
     expect(Number(state.race.extId)).toBeGreaterThan(25000);
     expect(state.race.extId).toBe(state.orisId);
     expect(state.race.name).toBe(state.mockRace.race.Name);
     expect(state.race.id).toBeTruthy();
+    expect(orisEvent.Classes.map((raceClass) => raceClass.Name).sort()).toEqual(['D21', 'H21', 'H35']);
   });
 
   test('club admin can ensure the configured mockup members exist', async ({ page }) => {
@@ -200,5 +212,76 @@ test.describe(ORIS_MOCKUP_RACE_WORKFLOW.name, () => {
     expect(memberEntry.ClassDesc).toBe(ORIS_MOCKUP_RACE_WORKFLOW.memberCategory);
     expect(memberEntry.Class.ID).toBe(`${state.orisId}02`);
     expect(memberEntry.SI).toBe('1341431');
+  });
+
+  test('member can unregister from the mockup ORIS race', async ({ page, request }) => {
+    await loginAs(page, 'member');
+    await page.goto(`./us_race_regon.php?id_zav=${state.race.id}&id_us=${state.memberUser.user_id}`);
+    await expect(page.getByRole('button', { name: 'Odhlásit ze závodu' })).toBeVisible();
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await Promise.all([
+      page.waitForURL(/us_race_regoff_exc\.php/),
+      page.getByRole('button', { name: 'Odhlásit ze závodu' }).click(),
+    ]);
+
+    const detail = await getRaceDetail(request, state.race.id);
+    const localEntry = detail.everyone.find((item) => item.user_id === state.memberUser.user_id);
+    expect(localEntry).toBeUndefined();
+
+    const entries = await getOrisApiEventEntries(request, state.orisId);
+    const memberEntry = entries.find((entry) => (
+      String(entry.ClubUserID) === ORIS_MOCKUP_RACE_WORKFLOW.memberOrisClubUserId
+      || entry.RegNo === ORIS_MOCKUP_RACE_WORKFLOW.memberRegNo
+    ));
+    expect(memberEntry).toBeUndefined();
+  });
+
+  test('registrar can move registration dates to past', async ({ page }) => {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setUTCMonth(oneMonthAgo.getUTCMonth() - 1);
+
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setUTCDate(oneWeekAgo.getUTCDate() - 7);
+
+    const oneDayAgo = new Date();
+    oneDayAgo.setUTCDate(oneDayAgo.getUTCDate() - 1);
+
+    state.expiredEntryDates = {
+      first: formatSavedRaceDate(oneMonthAgo),
+      second: formatSavedRaceDate(oneWeekAgo),
+      third: formatSavedRaceDate(oneDayAgo),
+    };
+
+    await loginAs(page, 'registrar');
+    await updateRace(page, state.race.id, {
+      prihlasky1: state.expiredEntryDates.first,
+      prihlasky2: state.expiredEntryDates.second,
+      prihlasky3: state.expiredEntryDates.third,
+    });
+
+    await page.goto(`./race_edit.php?id=${state.race.id}`);
+    await expect(page.locator('input[name="prihlasky1"]')).toHaveValue(state.expiredEntryDates.first);
+    await expect(page.locator('input[name="prihlasky2"]')).toHaveValue(state.expiredEntryDates.second);
+    await expect(page.locator('input[name="prihlasky3"]')).toHaveValue(state.expiredEntryDates.third);
+  });
+
+  test('member cannot register after the mockup ORIS race deadline', async ({ page, request }) => {
+    await loginAs(page, 'member');
+    await page.goto('./index.php?id=200&subid=2');
+
+    const raceRow = page.locator('a.adr_name', { hasText: state.race.name }).locator('xpath=ancestor::tr[1]');
+    await expect(raceRow).toBeVisible();
+    await expect(raceRow.getByText('Přihl.', { exact: true })).toHaveCount(0);
+    await expect(raceRow.getByText('Zobrazit', { exact: true })).toBeVisible();
+
+    const detail = await getRaceDetail(request, state.race.id);
+    expect(detail.everyone.find((item) => item.user_id === state.memberUser.user_id)).toBeUndefined();
+
+    const entries = await getOrisApiEventEntries(request, state.orisId);
+    expect(entries.find((entry) => (
+      String(entry.ClubUserID) === ORIS_MOCKUP_RACE_WORKFLOW.memberOrisClubUserId
+      || entry.RegNo === ORIS_MOCKUP_RACE_WORKFLOW.memberRegNo
+    ))).toBeUndefined();
   });
 });
