@@ -35,7 +35,7 @@ Dostupné služby:
 Bank mock pro vývoj:
 
 ```bash
-docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:oris
+docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:bank
 ```
 
 * admin UI: [http://127.0.0.1:10300/__admin](http://127.0.0.1:10300/__admin)
@@ -45,7 +45,7 @@ docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:or
 ORIS mock pro vývoj:
 
 ```bash
-docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:bank
+docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:oris
 ```
 
 * admin UI: [http://127.0.0.1:10301/__admin](http://127.0.0.1:10301/__admin)

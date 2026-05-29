@@ -177,7 +177,7 @@ class OrisCZConnector implements ConnectorInterface {
 
 			$date2 = ($raceData['Stages'] > 1) ? $this->getRaceDate($raceData['Stage'.$raceData['Stages']]) : 0;
 
-			return new RaceInfo([
+			return new RaceDTO([
 				'ext_id' => $raceData['ID'],
 				'datum' => String2DateDMY(formatDate($raceData['Date'])),
 				'datum2' => $date2,
@@ -201,7 +201,7 @@ class OrisCZConnector implements ConnectorInterface {
 				'kategorie' => implode(';', array_keys($classFees)),
 				'startovne' => $classFees,
 				'cancelled' => (!empty($raceData['Cancelled']) || !empty($raceData['Canceled']) || !empty($raceData['cancelled']) || !empty($raceData['canceled'])) ? 1 : 0,
-				'oris_entry_start' => !empty($raceData['EntryStart']) ? $raceData['EntryStart'] : null
+				'oris_entry_start' => !empty($raceData['EntryStart']) ? $raceData['EntryStart'] : null,
 			]);
 		} catch (OrisException $e) {
 			return null;
@@ -233,20 +233,20 @@ class OrisCZConnector implements ConnectorInterface {
 		global $g_external_is_club_id;
 
 		if ( !IsSet ($g_external_is_club_id) || $g_external_is_club_id === '' ) return null;
+
 		$racePayement = null;
 
 		try {
-			$response = $this->service->getEventEntries($raceId, $g_external_is_club_id);
+			$entries = $this->service->getEventEntries($raceId, $g_external_is_club_id);
 			$racePayement = new RacePayement($raceId);
-
-			foreach ($response as $entry) {
+			foreach ($entries as $entry) {
 				if (isset($entry['Fee'])) {
-					if (isset($entry['RegNo']) ) {
+					if (isset($entry['RegNo'])) {
 						$racePayement->addPatricipant(
 							new RaceParticipant($entry['RegNo'], $entry['ClassDesc'], $entry['Name'],
 							 $entry['RentSI'], $entry['Licence'], (int)$entry['Fee'], $entry['EntryStop']));
 					}
-					if (isset($entry['ClassDesc'])&&isset($entry['ClassDesc'])) {
+					if (isset($entry['ClassDesc'])) {
 						$racePayement->addCategory($entry['ClassDesc'], $entry['EntryStop'], (int)$entry['Fee']);
 					}
 				}
@@ -256,14 +256,14 @@ class OrisCZConnector implements ConnectorInterface {
 		}
 
 		try {
-			$response = $this->service->getEventServiceEntries($raceId, $g_external_is_club_id);
+			$serviceEntries = $this->service->getEventServiceEntries($raceId, $g_external_is_club_id);
 			if ( $racePayement ===  null ) $racePayement = new RacePayement($raceId);
-			foreach ($response as $entry) {
+			foreach ($serviceEntries as $entry) {
 				if ( isset ( $entry['Service'] ) ) {
 					$racePayement->addService($entry['Service']['NameCZ'] ?? 'Name?', $entry['Service']['UnitPrice'] , $entry['Quantity'] );
 				} else {
-					if ( isset ( $entry['Quantity'] ) && isset ( $entry['TotalFee'] ) ) {
-						$racePayement->addService('Name?', $entry['TotalFee'] / $entry['Quantity'], $entry['Quantity'] );
+					if (isset($entry['Quantity']) && isset($entry['TotalFee'])) {
+						$racePayement->addService('Name?', $entry['TotalFee'] / $entry['Quantity'], $entry['Quantity']);
 					}
 				}
 			}

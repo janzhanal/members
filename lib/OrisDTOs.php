@@ -1,6 +1,6 @@
 <?php
 
-class RaceInfo {
+class RaceDTO {
     public ?string $ext_id;
     public ?string $datum;
     public ?string $datum2;
