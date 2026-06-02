@@ -519,6 +519,11 @@ async function fetchUpstream(params: URLSearchParams): Promise<JsonObject | null
   }
 }
 
+async function fetchUpstreamEvent(id: string): Promise<JsonObject | null> {
+  const upstream = await fetchUpstream(new URLSearchParams({ format: 'json', method: 'getEvent', id }));
+  return upstream?.Status === 'OK' && isPlainObject(upstream.Data) ? upstream.Data as JsonObject : null;
+}
+
 function normalizeEventPayload(payload: JsonObject): JsonObject {
   const normalized = { ...payload };
   const id = asString(normalized.ID ?? normalized.id);
@@ -538,6 +543,16 @@ function defaultClasses(eventId: string): JsonObject[] {
   ];
 }
 
+function classKey(cls: JsonObject): string {
+  return asString(cls.ID ?? cls.id ?? cls.Name ?? cls.name);
+}
+
+function classList(value: unknown): JsonObject[] {
+  if (Array.isArray(value)) return value.filter(isPlainObject) as JsonObject[];
+  if (isPlainObject(value)) return Object.values(value).filter(isPlainObject) as JsonObject[];
+  return [];
+}
+
 function defaultRegNo(userId: string): string {
   const suffix = userId.replace(/\D/g, '').slice(-4).padStart(4, '0');
   return `${config.defaultClubAbbr}${suffix}`;
@@ -553,7 +568,7 @@ async function getEventClasses(eventId: string): Promise<EventClassRow[]> {
 
 function composeClasses(baseClasses: unknown, rows: EventClassRow[], localOnly: boolean, eventId: string): JsonObject[] {
   const classes = new Map<string, JsonObject>();
-  const base = Array.isArray(baseClasses) ? baseClasses as JsonObject[] : [];
+  const base = classList(baseClasses);
   for (const item of base) {
     const key = asString(item.ID || item.Name);
     if (key) classes.set(key, item);
@@ -668,7 +683,7 @@ function composeClubUserPayload(user: JsonObject): JsonObject {
 
 function composeEntry(row: EntryRow, upstreamEntry: JsonObject | null, event: JsonObject | null, user: JsonObject | null): JsonObject {
   const localOnly = !!row.proxy_only;
-  const eventClasses = Array.isArray(event?.Classes) ? event.Classes as JsonObject[] : [];
+  const eventClasses = classList(event?.Classes);
   const foundClass = eventClasses.find((item) => asString(item.ID) === row.class_id || asString(item.Name) === row.class_desc);
   const classId = row.class_id ?? asString(foundClass?.ID, '');
   const classDesc = row.class_desc ?? asString(foundClass?.Name, classId || 'H21');
@@ -733,8 +748,11 @@ async function getEvent(id: string, mockEventInfo?: EventRow | null): Promise<Js
     return composeEvent(row, await getEventClasses(id), null);
   }
 
-  const upstream = await fetchUpstream(new URLSearchParams({ format: 'json', method: 'getEvent', id }));
-  const upstreamEvent = upstream?.Status === 'OK' && isPlainObject(upstream.Data) ? upstream.Data as JsonObject : null;
+  const upstreamEvent = await fetchUpstreamEvent(id);
+  const upstreamClasses = classList(upstreamEvent?.Classes);
+  if (upstreamClasses.length > 0) {
+    await writeEventClasses(id, upstreamClasses, false);
+  }
   if (row) {
     if (!upstreamEvent) return null;
     return composeEvent(row, await getEventClasses(id), upstreamEvent);
@@ -765,7 +783,7 @@ function validateEntryMutation(event: JsonObject | null, classId: string): Entry
     return { type: 'error', message: `Class ${classId || '(missing)'} is not defined for an event.` };
   }
 
-  const classes = Array.isArray(event.Classes) ? event.Classes as JsonObject[] : [];
+  const classes = classList(event.Classes);
   if (!classes.some((item) => asString(item.ID) === classId)) {
     return { type: 'error', message: `Class ${classId || '(missing)'} is not defined for event ${asString(event.ID)}.` };
   }
@@ -781,19 +799,16 @@ function validateEntryMutation(event: JsonObject | null, classId: string): Entry
   return { type: 'ok' };
 }
 
-async function saveEventClasses(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<void> {
-  const classes = Array.isArray(input.classes)
-    ? input.classes as JsonObject[]
-    : Array.isArray(input.Classes)
-      ? input.Classes as JsonObject[]
-      : proxyOnly
-        ? defaultClasses(eventId)
-        : null;
-  if (!classes) return;
+function inputEventClasses(input: JsonObject): JsonObject[] | null {
+  if (Object.prototype.hasOwnProperty.call(input, 'classes')) return classList(input.classes);
+  if (Object.prototype.hasOwnProperty.call(input, 'Classes')) return classList(input.Classes);
+  return null;
+}
 
+async function writeEventClasses(eventId: string, classes: JsonObject[], proxyOnly: boolean): Promise<void> {
   await pool.query('DELETE FROM mock_event_classes WHERE event_id = ?', [eventId]);
   for (const cls of classes) {
-    const classId = asString(cls.ID ?? cls.id ?? cls.Name ?? cls.name);
+    const classId = classKey(cls);
     if (!classId) continue;
     await pool.query(
       `
@@ -803,6 +818,33 @@ async function saveEventClasses(eventId: string, input: JsonObject, proxyOnly: b
       [eventId, classId, nullableString(cls, 'Name', 'name'), nullableNumber(cls, 'Fee', 'fee'), proxyOnly ? 1 : 0],
     );
   }
+}
+
+async function eventClassesForSave(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<JsonObject[] | null> {
+  const inputClasses = inputEventClasses(input);
+  if (proxyOnly) return inputClasses ?? defaultClasses(eventId);
+
+  const upstreamEvent = await fetchUpstreamEvent(eventId);
+  const upstreamClasses = classList(upstreamEvent?.Classes);
+  if (!inputClasses) return upstreamClasses.length > 0 ? upstreamClasses : null;
+
+  const classesById = new Map<string, JsonObject>();
+  for (const cls of upstreamClasses) {
+    const classId = classKey(cls);
+    if (classId) classesById.set(classId, cls);
+  }
+  for (const cls of inputClasses) {
+    const classId = classKey(cls);
+    if (!classId) continue;
+    classesById.set(classId, mergeJson(classesById.get(classId) ?? {}, cls));
+  }
+  return Array.from(classesById.values());
+}
+
+async function saveEventClasses(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<void> {
+  const classes = await eventClassesForSave(eventId, input, proxyOnly);
+  if (!classes) return;
+  await writeEventClasses(eventId, classes, proxyOnly);
 }
 
 async function generateEventId(): Promise<string> {

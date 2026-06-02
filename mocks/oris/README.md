@@ -40,6 +40,8 @@ The server listens on port `10301` by default.
 - `POST /__admin/api/races/:eventId/services`
 
 Race create/update accepts `proxy_only` (`1` for mock/local-only, `0` for upstream overlay).
+When an upstream overlay race is saved, the mock fetches the upstream event and stores all returned classes in the mock database so later local entry mutations can resolve `class` IDs without another event lookup.
+Successful upstream `getEvent` requests through the mock also refresh the stored class snapshot.
 
 Example service-down mode:
 
