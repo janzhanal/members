@@ -288,6 +288,10 @@ function overlayValue<T extends string | number | boolean | null | undefined>(
   if (value !== null && value !== undefined) callback(value as NonNullable<T>);
 }
 
+function overlayDateTimeValue(value: string | null | undefined, callback: (value: string) => void): void {
+  callback(value === null || value === undefined ? '' : normalizeDateTimeValue(value));
+}
+
 async function ensureDatabase(): Promise<void> {
   const adminConnection = await mysql.createConnection({
     host: config.dbHost,
@@ -324,8 +328,8 @@ async function ensureDatabase(): Promise<void> {
       level_id INT NULL,
       ranking VARCHAR(32) NULL,
       entry_date1 DATETIME NULL,
-      entry_date2 DATE NULL,
-      entry_date3 DATE NULL,
+      entry_date2 DATETIME NULL,
+      entry_date3 DATETIME NULL,
       entry_koef2 DECIMAL(8,2) NULL,
       entry_koef3 DECIMAL(8,2) NULL,
       entry_start DATETIME NULL,
@@ -608,8 +612,8 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
       Level: { ID: 4 },
       Ranking: '1',
       EntryDate1: orisDateTimePlus(20),
-      EntryDate2: todayPlus(24),
-      EntryDate3: todayPlus(27),
+      EntryDate2: orisDateTimePlus(24),
+      EntryDate3: orisDateTimePlus(27),
       EntryKoef2: 1,
       EntryKoef3: 1,
       EntryStart: orisDateTimePlus(10),
@@ -628,12 +632,12 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
   overlayValue(row.sport_id, (value) => { overlay.Sport = { ID: Number(value) }; });
   overlayValue(row.level_id, (value) => { overlay.Level = { ID: Number(value) }; });
   overlayValue(row.ranking, (value) => { overlay.Ranking = value; });
-  overlayValue(row.entry_date1, (value) => { overlay.EntryDate1 = normalizeDateTimeValue(value); });
-  overlayValue(row.entry_date2, (value) => { overlay.EntryDate2 = value; });
-  overlayValue(row.entry_date3, (value) => { overlay.EntryDate3 = value; });
+  overlayDateTimeValue(row.entry_date1, (value) => { overlay.EntryDate1 = value; });
+  overlayDateTimeValue(row.entry_date2, (value) => { overlay.EntryDate2 = value; });
+  overlayDateTimeValue(row.entry_date3, (value) => { overlay.EntryDate3 = value; });
   overlayValue(row.entry_koef2, (value) => { overlay.EntryKoef2 = Number(value); });
   overlayValue(row.entry_koef3, (value) => { overlay.EntryKoef3 = Number(value); });
-  overlayValue(row.entry_start, (value) => { overlay.EntryStart = normalizeDateTimeValue(value); });
+  overlayDateTimeValue(row.entry_start, (value) => { overlay.EntryStart = value; });
   overlayValue(row.org_abbr, (value) => { overlay.Org1 = { Abbr: value }; });
   overlayValue(row.region_id, (value) => { overlay.Regions = { 1: { ID: value } }; });
   overlayValue(row.cancelled, (value) => { overlay.Cancelled = Number(value); });
@@ -929,8 +933,8 @@ async function upsertEvent(input: JsonObject): Promise<JsonObject> {
       nullableNumber(input, 'levelId') ?? (isPlainObject(input.Level) ? nullableNumber(input.Level as JsonObject, 'ID') : null) ?? (generatedRace ? 4 : null),
       nullableString(input, 'ranking', 'Ranking') ?? (generatedRace ? '1' : null),
       nullableDateTime(input, 'entryDate1', 'EntryDate1'),
-      nullableString(input, 'entryDate2', 'EntryDate2'),
-      nullableString(input, 'entryDate3', 'EntryDate3'),
+      nullableDateTime(input, 'entryDate2', 'EntryDate2'),
+      nullableDateTime(input, 'entryDate3', 'EntryDate3'),
       nullableNumber(input, 'entryKoef2', 'EntryKoef2'),
       nullableNumber(input, 'entryKoef3', 'EntryKoef3'),
       nullableDateTime(input, 'entryStart', 'EntryStart'),
