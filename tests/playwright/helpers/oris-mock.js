@@ -56,7 +56,6 @@ async function createOrisMockRace(request, overrides = {}) {
   const defaults = {
     name: 'Playwright ORIS mock race',
     place: 'Playwright place',
-    entryStart: orisDateTimePlus(10),
     entryDate1: orisDateTimePlus(20),
   };
 
