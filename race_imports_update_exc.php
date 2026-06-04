@@ -88,7 +88,7 @@ function createRaceUpdateMap(RaceDTO $raceInfo, array $raceRow, array $raceTypes
 	$update['kategorie'] = (string)$raceInfo->kategorie;
 	$update['vicedenni'] = $vicedenni;
 	$update['cancelled'] = ($raceInfo->cancelled === null) ? (int)$raceRow['cancelled'] : (int)$raceInfo->cancelled;
-	$update['oris_entry_start'] = $raceInfo->oris_entry_start;
+	$update['entry_start'] = $raceInfo->entry_start;
 	$update['modify_flag'] = $modify_flag;
 
 	return $update;
@@ -132,7 +132,7 @@ function getChangedLabels(array $changedUpdates): array
 		'kategorie' => 'kategorie',
 		'vicedenni' => 'vícedenní',
 		'cancelled' => 'zrušení',
-		'oris_entry_start' => 'zahájení přihlášek ORIS',
+		'entry_start' => 'otevření přihlášek',
 		'modify_flag' => 'příznak změny'
 	];
 	$changedLabels = [];
@@ -146,7 +146,7 @@ function getChangedLabels(array $changedUpdates): array
 
 function fetchRaceRow(int $raceId)
 {
-	$sql = "SELECT id, ext_id, datum, datum2, nazev, misto, typ0, typ, zebricek, ranking, odkaz, prihlasky, prihlasky1, prihlasky2, prihlasky3, prihlasky4, prihlasky5, etap, oddil, kategorie, vicedenni, cancelled, oris_entry_start, modify_flag"
+	$sql = "SELECT id, ext_id, datum, datum2, nazev, misto, typ0, typ, zebricek, ranking, odkaz, prihlasky, prihlasky1, prihlasky2, prihlasky3, prihlasky4, prihlasky5, etap, oddil, kategorie, vicedenni, cancelled, entry_start, modify_flag"
 		." FROM ".TBL_RACE." WHERE id=? LIMIT 1";
 	$stmt = db_prepare($sql);
 	if ($stmt === false)
@@ -279,8 +279,8 @@ else {
 		}
 
 		$syncNote = '';
-		if (array_key_exists('oris_entry_start', $changedUpdates)) {
-			$newEntryStart = $changedUpdates['oris_entry_start'];
+		if (array_key_exists('entry_start', $changedUpdates)) {
+			$newEntryStart = $changedUpdates['entry_start'];
 			$entryStartOpen = empty($newEntryStart) || strtotime($newEntryStart) <= time();
 			if ($entryStartOpen) {
 				global $g_oris_club_key;

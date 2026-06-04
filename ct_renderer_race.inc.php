@@ -29,16 +29,16 @@ function CreateRaceSyncStatusColumn($race): ?TableColumn {
         return null;
     }
 
-    $oris_entry_future = false;
-    if (is_array($race) && !empty($race['oris_entry_start'])) {
-        $entry_start = strtotime($race['oris_entry_start']);
-        $oris_entry_future = ($entry_start !== false && $entry_start > time());
+    $entry_start_future = false;
+    if (is_array($race) && !empty($race['entry_start'])) {
+        $entry_start = strtotime($race['entry_start']);
+        $entry_start_future = ($entry_start !== false && $entry_start > time());
     }
 
     return RaceRendererFactory::createColumn(
         new HelpHeaderRenderer('&#x21C4;', ALIGN_CENTER, 'Synchronizace s '.$connector->getSystemName()),
-        new CallbackRenderer(function (RowData $row, array $options) use ($oris_entry_future): string {
-            return RenderRaceSyncStatusSymbol($row->rec['sync_status'] ?? '', $oris_entry_future);
+        new CallbackRenderer(function (RowData $row, array $options) use ($entry_start_future): string {
+            return RenderRaceSyncStatusSymbol($row->rec['sync_status'] ?? '', $entry_start_future);
         })
     );
 }
