@@ -4,6 +4,8 @@ const {
   ensureHtmlSubmission,
   postFormInSession,
   readFormState,
+  setFormFields,
+  submitFormAndHandleSyncMessage,
 } = require('./browser');
 
 async function createPaymentRule(page, overrides = {}) {
@@ -562,32 +564,44 @@ async function createRace(page, request, overrides = {}) {
 async function updateRace(page, raceId, overrides = {}) {
   await page.goto(`./race_edit.php?id=${raceId}`);
 
-  const form = await readFormState(page, 'form[name="form2"]');
-  const result = await postFormInSession(page, form.action, {
-    ...form.fields,
-    ...overrides,
-  });
+  await setFormFields(page, 'form[name="form2"]', overrides);
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+    page.locator('form[name="form2"] input[type="submit"][value="Aktualizovat údaje"]').click(),
+  ]);
+
+  const result = {
+    ok: true,
+    status: 200,
+    url: page.url(),
+    text: await page.content(),
+  };
 
   return ensureHtmlSubmission(result, `Update race ${raceId}`);
 }
 
-async function submitMemberRaceRegistration(page, fields) {
-  const result = await postFormInSession(page, './us_race_regon_exc.php', fields);
-  return ensureHtmlSubmission(result, 'Submit member race registration');
+async function submitMemberRaceRegistration(page, fields, options = {}) {
+  await setFormFields(page, 'form[name="form1"]', fields);
+  return submitFormAndHandleSyncMessage(page, {
+    expectedOutcome: options.expectedOutcome || 'overview',
+    label: 'Submit member race registration',
+    submitSelector: 'form[name="form1"] input[type="submit"]',
+    returnUrlPattern: /us_race_regon\.php/,
+  });
 }
 
-async function submitManagedRaceRegistration(page, raceId, fields) {
+async function submitManagedRaceRegistration(page, raceId, fields, options = {}) {
   const groupId = fields.groupId || 600;
   const postFields = { ...fields };
   delete postFields.groupId;
 
-  const result = await postFormInSession(
-    page,
-    `./race_regs_1_exc.php?gr_id=${groupId}&id=${raceId}&show_ed=1`,
-    postFields
-  );
-
-  return ensureHtmlSubmission(result, 'Submit small-manager race registration');
+  await setFormFields(page, 'form[name="form1"]', postFields);
+  return submitFormAndHandleSyncMessage(page, {
+    expectedOutcome: options.expectedOutcome || 'overview',
+    label: 'Submit small-manager race registration',
+    submitSelector: 'input[type="submit"][value="Proveď změnu"]',
+    returnUrlPattern: /race_regs_1\.php/,
+  });
 }
 
 module.exports = {

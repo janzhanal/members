@@ -1,8 +1,8 @@
 const { expect } = require('@playwright/test');
 const {
-  ensureHtmlSubmission,
   openPopup,
-  postFormInSession,
+  setFormFields,
+  submitFormAndHandleSyncMessage,
 } = require('./browser');
 const {
   formatClubReg,
@@ -192,6 +192,7 @@ async function getRaceRegistrationRow(page, reg, options = {}) {
         transport: getCheckboxValue(row, 'transport'),
         accommodation: getCheckboxValue(row, 'ubytovani'),
         term: getInputValue(row, 'term'),
+        lastColumnText: cells[cells.length - 1].textContent.trim(),
       };
     }
 
@@ -235,13 +236,13 @@ async function ensureRaceParticipants(page, raceId, participants, options = {}) 
     }
   }
 
-  const result = await postFormInSession(
-    page,
-    `./race_regs_all_exc.php?gr_id=${groupId}&id=${raceId}`,
-    postFields
-  );
-
-  ensureHtmlSubmission(result, `Ensure race participants for race ${raceId}`);
+  await setFormFields(page, 'form[name="form1"]', postFields);
+  await submitFormAndHandleSyncMessage(page, {
+    expectedOutcome: options.expectedOutcome || 'overview',
+    label: `Ensure race participants for race ${raceId}`,
+    submitSelector: 'input[type="submit"][value="Proveď změny"]',
+    returnUrlPattern: /race_regs_all\.php/,
+  });
 
   const verifiedParticipants = {};
 
@@ -292,11 +293,13 @@ async function removeRaceParticipant(page, raceId, reg, options = {}) {
     fields[`term[${row.userId}]`] = String(row.term);
   }
 
-  return postFormInSession(
-    page,
-    `./race_regs_all_exc.php?gr_id=${groupId}&id=${raceId}`,
-    fields
-  );
+  await setFormFields(page, 'form[name="form1"]', fields);
+  return submitFormAndHandleSyncMessage(page, {
+    expectedOutcome: options.expectedOutcome || 'overview',
+    label: `Remove race participant ${formatClubReg(reg)} from race ${raceId}`,
+    submitSelector: 'input[type="submit"][value="Proveď změny"]',
+    returnUrlPattern: /race_regs_all\.php/,
+  });
 }
 
 module.exports = {

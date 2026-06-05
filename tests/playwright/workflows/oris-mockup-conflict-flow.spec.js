@@ -167,10 +167,12 @@ test.describe(ORIS_MOCKUP_CONFLICT_WORKFLOW.name, () => {
       kat: ORIS_MOCKUP_CONFLICT_WORKFLOW.undefinedCategory,
       pozn: `undefined category ${state.run.runId}`,
       pozn2: '',
+    }, {
+      expectedOutcome: 'message',
     });
 
     expect(result.text).toContain('Chyba při synchronizaci s ORIS');
-    expect(result.text).toContain(`Nelze spárovat kategorii &#039;${ORIS_MOCKUP_CONFLICT_WORKFLOW.undefinedCategory}&#039; s ORISem.`);
+    expect(result.text).toContain(`Nelze spárovat kategorii '${ORIS_MOCKUP_CONFLICT_WORKFLOW.undefinedCategory}' s ORISem.`);
     await expectMemberEntryAbsent(request, state);
   });
 
@@ -181,7 +183,9 @@ test.describe(ORIS_MOCKUP_CONFLICT_WORKFLOW.name, () => {
     expect(remoteEntries.find((entry) => String(entry.ID) === state.user7203EntryId)).toBeUndefined();
 
     await loginAs(page, 'registrar');
-    const result = await removeRaceParticipant(page, state.race.id, ORIS_MOCKUP_CONFLICT_WORKFLOW.user7203Reg);
+    const result = await removeRaceParticipant(page, state.race.id, ORIS_MOCKUP_CONFLICT_WORKFLOW.user7203Reg, {
+      expectedOutcome: 'message',
+    });
 
     expect(result.text).toContain('Chyby při synchronizaci s ORIS');
     expect(result.text).toContain('Entry not found');
@@ -216,6 +220,8 @@ test.describe(ORIS_MOCKUP_CONFLICT_WORKFLOW.name, () => {
       kat: ORIS_MOCKUP_CONFLICT_WORKFLOW.definedCategory,
       pozn: `expired deadline ${state.run.runId}`,
       pozn2: '',
+    }, {
+      expectedOutcome: 'message',
     });
 
     expect(result.text).toContain('Chyba při synchronizaci s ORIS');
