@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import express, { type Request, type Response } from 'express';
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 
@@ -29,8 +31,8 @@ type EventRow = MockRow & {
   name: string | null;
   place: string | null;
   stages: number | null;
-  sport_id: number | null;
-  level_id: number | null;
+  sport_id: string | null;
+  level_id: string | null;
   ranking: string | null;
   entry_date1: string | null;
   entry_date2: string | null;
@@ -100,12 +102,69 @@ const config = {
   upstreamBaseUrl: normalizeBaseUrl(process.env.ORIS_MOCK_UPSTREAM_BASE_URL ?? 'https://oris.ceskyorientak.cz/'),
   defaultClubId: process.env.ORIS_MOCK_DEFAULT_CLUB_ID ?? '205',
   defaultClubAbbr: process.env.ORIS_MOCK_DEFAULT_CLUB_ABBR ?? 'ZBM',
+  apiLogFile: process.env.ORIS_MOCK_API_LOG_FILE ?? path.join(process.cwd(), 'logs', 'oris_mock_api.log'),
 };
+
+const TESTBENCH_BASE = '/__testbench';
+const TESTBENCH_FAVICON_FILE = path.join(process.cwd(), 'mocks', 'oris', 'assets', 'testbench-favicon.svg');
+
+const ORIS_SPORTS = [
+  { id: '1', name: 'OB', description: 'Foot O' },
+  { id: '2', name: 'LOB', description: 'Ski O' },
+  { id: '3', name: 'MTBO', description: 'MTB O' },
+  { id: '4', name: 'TRAIL', description: 'Trail' },
+];
+
+const ORIS_LEVELS = [
+  { id: '1', name: 'MČR', description: 'Mistrovství ČR' },
+  { id: '2', name: 'ŽA', description: 'Žebříček A' },
+  { id: '3', name: 'ŽB', description: 'Žebříček B' },
+  { id: '4', name: 'OŽ', description: 'Oblastní žebříček' },
+  { id: '5', name: 'E', description: 'Jednotlivá etapa' },
+  { id: '6', name: 'OST', description: 'Ostatní' },
+  { id: '7', name: 'ČPŠ', description: 'Český pohár štafet' },
+  { id: '8', name: 'ČP', description: 'Český pohár' },
+  { id: '9', name: 'ČLK', description: 'Česká liga klubů' },
+  { id: '10', name: 'SC', description: 'Sprint cup' },
+  { id: '11', name: 'OM', description: 'Oblastní mistrovství' },
+  { id: '12', name: 'WRE', description: 'World ranking' },
+  { id: '13', name: 'ZL', description: 'Zimní liga' },
+  { id: '14', name: 'OF', description: 'Ostatní oficiální' },
+  { id: '15', name: 'SEM', description: 'Školení, schůze, semináře' },
+  { id: '16', name: 'ET', description: 'Etapový závod' },
+  { id: '17', name: 'VET', description: 'Veteraniáda ČR' },
+  { id: '18', name: 'REG', description: 'Regionální závod' },
+  { id: '19', name: 'STK', description: 'Stacionární tréninkový kemp' },
+  { id: '20', name: 'PS', description: 'Přebor škol' },
+  { id: '21', name: 'TC', description: 'Soustředění' },
+  { id: '22', name: 'REPRE', description: 'Reprezentace OB' },
+];
+
+const ORIS_REGIONS = [
+  { id: 'Č', name: 'Čechy' },
+  { id: 'ČR', name: 'ČR' },
+  { id: 'HA', name: 'Hanácká' },
+  { id: 'JČ', name: 'Jihočeská' },
+  { id: 'JE', name: 'Ještědská' },
+  { id: 'JM', name: 'Jihomoravská' },
+  { id: 'M', name: 'Morava' },
+  { id: 'MSK', name: 'MS kraj' },
+  { id: 'P', name: 'Pražská' },
+  { id: 'StČ', name: 'Středočeská' },
+  { id: 'VA', name: 'Valašská' },
+  { id: 'VČ', name: 'Východočeská' },
+  { id: 'VY', name: 'Vysočina' },
+  { id: 'ZČ', name: 'Západočeská' },
+];
 
 let pool: Pool;
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/API\/?$/i, '').replace(/\/?$/, '/');
+}
+
+function testbenchPath(suffix = ''): string {
+  return `${TESTBENCH_BASE}${suffix}`;
 }
 
 function apiOk(data: unknown): JsonObject {
@@ -198,6 +257,60 @@ function nullableBool(input: JsonObject, ...keys: string[]): number | null {
   return value === null ? null : asBool(value) ? 1 : 0;
 }
 
+function idList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.flatMap((item) => idList(item))));
+  }
+  if (isPlainObject(value)) {
+    const directId = value.ID ?? value.id;
+    if (directId !== undefined) return idList(directId);
+    return Array.from(new Set(Object.values(value).flatMap((item) => idList(item))));
+  }
+  return asString(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function nullableIdList(input: JsonObject, ...keys: string[]): string | null {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(input, key)) continue;
+    return idList(input[key]).join(',');
+  }
+  return null;
+}
+
+function sportName(value: unknown): string | null {
+  const requested = isPlainObject(value) ? value.ID ?? value.id ?? value.NameCZ ?? value.name : value;
+  const normalized = asString(requested).trim().toUpperCase();
+  if (!normalized) return null;
+  return ORIS_SPORTS.find((item) => item.id === normalized || item.name === normalized)?.name ?? null;
+}
+
+function levelNames(value: unknown): string[] {
+  return Array.from(new Set(idList(value).flatMap((requested) => {
+    const normalized = requested.toUpperCase();
+    const level = ORIS_LEVELS.find((item) => item.id === normalized || item.name.toUpperCase() === normalized);
+    return level ? [level.name] : [];
+  })));
+}
+
+function nullableSportName(input: JsonObject, ...keys: string[]): string | null {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(input, key)) continue;
+    return sportName(input[key]);
+  }
+  return null;
+}
+
+function nullableLevelNames(input: JsonObject, ...keys: string[]): string | null {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(input, key)) continue;
+    return levelNames(input[key]).join(',');
+  }
+  return null;
+}
+
 function firstValue(value: unknown): string | undefined {
   if (Array.isArray(value)) return value.length > 0 ? asString(value[0]) : undefined;
   if (value === undefined) return undefined;
@@ -281,6 +394,70 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+function jsonScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function serializeLogParams(req: Request): string {
+  const params = requestSearchParams(req);
+  return params.toString();
+}
+
+async function appendApiLog(req: Request, statusCode: number, startedAt: number, closedEarly: boolean): Promise<void> {
+  const methodName = asString(req.query.method ?? (isPlainObject(req.body) ? req.body.method : undefined), '-');
+  const durationMs = Date.now() - startedAt;
+  const line = [
+    new Date().toISOString(),
+    `status=${statusCode}`,
+    `duration_ms=${durationMs}`,
+    `http=${req.method}`,
+    `method=${methodName || '-'}`,
+    `closed=${closedEarly ? '1' : '0'}`,
+    `params=${serializeLogParams(req)}`,
+  ].join(' ');
+
+  await fs.mkdir(path.dirname(config.apiLogFile), { recursive: true });
+  await fs.appendFile(config.apiLogFile, `${line}\n`, 'utf8');
+}
+
+function attachApiLogger(req: Request, res: Response): void {
+  const startedAt = Date.now();
+  let logged = false;
+  const logOnce = (closedEarly: boolean) => {
+    if (logged) return;
+    logged = true;
+    void appendApiLog(req, res.statusCode || 499, startedAt, closedEarly).catch((error) => {
+      console.error('appendApiLog failed:', error);
+    });
+  };
+
+  res.on('finish', () => logOnce(false));
+  res.on('close', () => {
+    if (!res.writableEnded) logOnce(true);
+  });
+}
+
+async function readApiLog(maxLines = 500): Promise<string> {
+  try {
+    const content = await fs.readFile(config.apiLogFile, 'utf8');
+    const lines = content.trimEnd().split('\n');
+    return lines.slice(Math.max(0, lines.length - maxLines)).join('\n');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return '';
+    throw error;
+  }
+}
+
+async function clearApiLog(): Promise<void> {
+  try {
+    await fs.unlink(config.apiLogFile);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') throw error;
+  }
+}
+
 function overlayValue<T extends string | number | boolean | null | undefined>(
   value: T,
   callback: (value: NonNullable<T>) => void,
@@ -324,8 +501,8 @@ async function ensureDatabase(): Promise<void> {
       name VARCHAR(255) NULL,
       place VARCHAR(255) NULL,
       stages INT NULL,
-      sport_id INT NULL,
-      level_id INT NULL,
+      sport_id ENUM('OB', 'LOB', 'MTBO', 'TRAIL') NULL,
+      level_id VARCHAR(255) NULL,
       ranking VARCHAR(32) NULL,
       entry_date1 DATETIME NULL,
       entry_date2 DATETIME NULL,
@@ -334,7 +511,7 @@ async function ensureDatabase(): Promise<void> {
       entry_koef3 DECIMAL(8,2) NULL,
       entry_start DATETIME NULL,
       org_abbr VARCHAR(32) NULL,
-      region_id VARCHAR(32) NULL,
+      region_id VARCHAR(255) NULL,
       cancelled TINYINT(1) NULL,
       proxy_only TINYINT(1) NOT NULL DEFAULT 1,
       deleted TINYINT(1) NOT NULL DEFAULT 0,
@@ -501,6 +678,7 @@ async function maybeApplyFaultMode(req: Request, res: Response): Promise<boolean
   }
 
   if (settings.mode === 'close_connection') {
+    res.status(settings.forceStatusCode);
     req.socket.destroy();
     return true;
   }
@@ -539,21 +717,20 @@ function normalizeEventPayload(payload: JsonObject): JsonObject {
   return normalized;
 }
 
-function defaultClasses(eventId: string): JsonObject[] {
-  return [
-    { ID: `${eventId}01`, Name: 'H21', Fee: 150 },
-    { ID: `${eventId}02`, Name: 'D21', Fee: 150 },
-    { ID: `${eventId}03`, Name: 'H35', Fee: 150 },
-  ];
-}
-
 function classKey(cls: JsonObject): string {
-  return asString(cls.ID ?? cls.id ?? cls.Name ?? cls.name);
+	return asString(cls.ID ?? cls.id ?? cls.Name ?? cls.name);
 }
 
 function classList(value: unknown): JsonObject[] {
   if (Array.isArray(value)) return value.filter(isPlainObject) as JsonObject[];
-  if (isPlainObject(value)) return Object.values(value).filter(isPlainObject) as JsonObject[];
+  if (isPlainObject(value)) {
+    return Object.entries(value).flatMap(([key, item]) => {
+      if (!isPlainObject(item)) return [];
+      const cls = { ...item };
+      if (cls.ID === undefined && cls.id === undefined) cls.ID = key;
+      return [cls];
+    });
+  }
   return [];
 }
 
@@ -570,21 +747,17 @@ async function getEventClasses(eventId: string): Promise<EventClassRow[]> {
   return rows;
 }
 
-function composeClasses(baseClasses: unknown, rows: EventClassRow[], localOnly: boolean, eventId: string): JsonObject[] {
-  const classes = new Map<string, JsonObject>();
-  const base = classList(baseClasses);
-  for (const item of base) {
-    const key = asString(item.ID || item.Name);
-    if (key) classes.set(key, item);
-  }
+function composeClasses(baseClasses: unknown, rows: EventClassRow[]): JsonObject[] {
+	const classes = new Map<string, JsonObject>();
+	const base = classList(baseClasses);
+	for (const item of base) {
+		const key = asString(item.ID || item.Name);
+		if (key) classes.set(key, item);
+	}
 
-  if (localOnly && rows.length === 0) {
-    for (const item of defaultClasses(eventId)) classes.set(asString(item.ID), item);
-  }
-
-  for (const row of rows) {
-    const key = row.class_id;
-    if (row.deleted) {
+	for (const row of rows) {
+		const key = row.class_id;
+		if (row.deleted) {
       classes.delete(key);
       continue;
     }
@@ -598,6 +771,38 @@ function composeClasses(baseClasses: unknown, rows: EventClassRow[], localOnly: 
   return Array.from(classes.values());
 }
 
+function composeSport(name: string): JsonObject {
+  const sport = ORIS_SPORTS.find((item) => item.name === name);
+  return {
+    ID: sport?.id ?? '',
+    ...(sport ? { NameCZ: sport.name, NameEN: sport.description } : {}),
+  };
+}
+
+function composeLevel(value: string): JsonObject {
+  const names = idList(value);
+  const levels = names.map((name) => ORIS_LEVELS.find((item) => item.name === name)).filter(Boolean);
+  return {
+    ID: levels.map((item) => item?.id).join(','),
+    ...(levels.length > 0 ? {
+      ShortName: levels.map((item) => item?.name).join(', '),
+      NameCZ: levels.map((item) => item?.description).join(', '),
+    } : {}),
+  };
+}
+
+function composeRegions(value: unknown): JsonObject {
+  const regions: JsonObject = {};
+  for (const id of idList(value)) {
+    const region = ORIS_REGIONS.find((item) => item.id === id);
+    regions[`Region_${id}`] = {
+      ID: id,
+      ...(region ? { Name: region.name } : {}),
+    };
+  }
+  return regions;
+}
+
 function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: JsonObject | null): JsonObject {
   const localOnly = !!row.proxy_only;
   const base: JsonObject = localOnly
@@ -608,17 +813,17 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
       Place: 'Proxy place',
       Stages: 1,
       Stage1: row.id,
-      Sport: { ID: 1 },
-      Level: { ID: 4 },
+      Sport: composeSport('OB'),
+      Level: composeLevel('OŽ'),
       Ranking: '1',
       EntryDate1: orisDateTimePlus(20),
       EntryDate2: orisDateTimePlus(24),
       EntryDate3: orisDateTimePlus(27),
       EntryKoef2: 1,
       EntryKoef3: 1,
-      EntryStart: orisDateTimePlus(10),
+      EntryStart: '',
       Org1: { Abbr: config.defaultClubAbbr },
-      Regions: { 1: { ID: 'JM' } },
+      Regions: composeRegions('JM'),
       Classes: [],
       Cancelled: 0,
     }
@@ -629,8 +834,8 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
   overlayValue(row.name, (value) => { overlay.Name = value; });
   overlayValue(row.place, (value) => { overlay.Place = value; });
   overlayValue(row.stages, (value) => { overlay.Stages = Number(value); });
-  overlayValue(row.sport_id, (value) => { overlay.Sport = { ID: Number(value) }; });
-  overlayValue(row.level_id, (value) => { overlay.Level = { ID: Number(value) }; });
+  overlayValue(row.sport_id, (value) => { overlay.Sport = composeSport(value); });
+  overlayValue(row.level_id, (value) => { overlay.Level = composeLevel(value); });
   overlayValue(row.ranking, (value) => { overlay.Ranking = value; });
   overlayDateTimeValue(row.entry_date1, (value) => { overlay.EntryDate1 = value; });
   overlayDateTimeValue(row.entry_date2, (value) => { overlay.EntryDate2 = value; });
@@ -639,11 +844,11 @@ function composeEvent(row: EventRow, classRows: EventClassRow[], upstreamEvent: 
   overlayValue(row.entry_koef3, (value) => { overlay.EntryKoef3 = Number(value); });
   overlayDateTimeValue(row.entry_start, (value) => { overlay.EntryStart = value; });
   overlayValue(row.org_abbr, (value) => { overlay.Org1 = { Abbr: value }; });
-  overlayValue(row.region_id, (value) => { overlay.Regions = { 1: { ID: value } }; });
+  overlayValue(row.region_id, (value) => { overlay.Regions = composeRegions(value); });
   overlayValue(row.cancelled, (value) => { overlay.Cancelled = Number(value); });
 
   const merged = normalizeEventPayload(mergeJson(base, overlay));
-  merged.Classes = composeClasses(merged.Classes, classRows, localOnly, row.id);
+  merged.Classes = composeClasses(merged.Classes, classRows);
   return merged;
 }
 
@@ -803,9 +1008,32 @@ function validateEntryMutation(event: JsonObject | null, classId: string): Entry
   return { type: 'ok' };
 }
 
-function inputEventClasses(input: JsonObject): JsonObject[] | null {
-  if (Object.prototype.hasOwnProperty.call(input, 'classes')) return classList(input.classes);
-  if (Object.prototype.hasOwnProperty.call(input, 'Classes')) return classList(input.Classes);
+function normalizeInputClasses(eventId: string, value: unknown): JsonObject[] {
+  const classes: JsonObject[] = typeof value === 'string'
+    ? value.split(';').map((name) => ({ Name: name.trim() })).filter((item) => item.Name)
+    : classList(value);
+  const usedIds = new Set(classes.map((cls) => asString(cls.ID ?? cls.id)).filter(Boolean));
+  let nextId = 1;
+
+  return classes.map((cls) => {
+    const normalized: JsonObject = { ...cls };
+    if (!asString(normalized.ID ?? normalized.id)) {
+      let classId = '';
+      do {
+        classId = `${eventId}${String(nextId).padStart(2, '0')}`;
+        nextId += 1;
+      } while (usedIds.has(classId));
+      normalized.ID = classId;
+      usedIds.add(classId);
+    }
+    if (normalized.Fee === undefined && normalized.fee === undefined) normalized.Fee = 150;
+    return normalized;
+  });
+}
+
+function inputEventClasses(eventId: string, input: JsonObject): JsonObject[] | null {
+  if (Object.prototype.hasOwnProperty.call(input, 'classes')) return normalizeInputClasses(eventId, input.classes);
+  if (Object.prototype.hasOwnProperty.call(input, 'Classes')) return normalizeInputClasses(eventId, input.Classes);
   return null;
 }
 
@@ -825,8 +1053,8 @@ async function writeEventClasses(eventId: string, classes: JsonObject[], proxyOn
 }
 
 async function eventClassesForSave(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<JsonObject[] | null> {
-  const inputClasses = inputEventClasses(input);
-  if (proxyOnly) return inputClasses ?? defaultClasses(eventId);
+  const inputClasses = inputEventClasses(eventId, input);
+  if (proxyOnly) return inputClasses;
 
   const upstreamEvent = await fetchUpstreamEvent(eventId);
   const upstreamClasses = classList(upstreamEvent?.Classes);
@@ -845,19 +1073,56 @@ async function eventClassesForSave(eventId: string, input: JsonObject, proxyOnly
   return Array.from(classesById.values());
 }
 
+async function replaceEventClasses(eventId: string, classes: JsonObject[], proxyOnly: boolean): Promise<void> {
+  const baseClasses = proxyOnly ? [] : classList((await fetchUpstreamEvent(eventId))?.Classes);
+  await writeEventClasses(eventId, classes, proxyOnly);
+
+  const selectedIds = new Set(classes.map(classKey).filter(Boolean));
+  for (const cls of baseClasses) {
+    const classId = classKey(cls);
+    if (!classId || selectedIds.has(classId)) continue;
+    await pool.query(
+      `
+        INSERT INTO mock_event_classes (event_id, class_id, name, fee, proxy_only, deleted)
+        VALUES (?, ?, ?, ?, ?, 1)
+      `,
+      [eventId, classId, nullableString(cls, 'Name', 'name'), nullableNumber(cls, 'Fee', 'fee'), proxyOnly ? 1 : 0],
+    );
+  }
+}
+
 async function saveEventClasses(eventId: string, input: JsonObject, proxyOnly: boolean): Promise<void> {
+  const inputClasses = inputEventClasses(eventId, input);
+  if (inputClasses !== null && asBool(input.replaceClasses ?? input.replace_classes)) {
+    await replaceEventClasses(eventId, inputClasses, proxyOnly);
+    return;
+  }
   const classes = await eventClassesForSave(eventId, input, proxyOnly);
   if (!classes) return;
   await writeEventClasses(eventId, classes, proxyOnly);
 }
 
 async function generateEventId(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const id = String(crypto.randomInt(25001, 999999));
-    const [rows] = await pool.query<EventRow[]>('SELECT id FROM mock_events WHERE id = ? LIMIT 1', [id]);
-    if (!rows[0]) return id;
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `
+      SELECT DISTINCT CAST(id AS UNSIGNED) AS event_id
+      FROM mock_events
+      WHERE id REGEXP '^[0-9]+$'
+        AND CAST(id AS UNSIGNED) BETWEEN 25000 AND 999999
+      ORDER BY event_id
+    `,
+  );
+  let candidate = 25000;
+  for (const row of rows) {
+    const eventId = Number(row.event_id);
+    if (eventId < candidate) continue;
+    if (eventId > candidate) break;
+    candidate += 1;
   }
-  throw new Error('Could not generate unique event ID');
+  if (candidate > 999999) {
+    throw new Error('Could not generate unique event ID');
+  }
+  return String(candidate);
 }
 
 async function generateEntryId(): Promise<string> {
@@ -869,16 +1134,19 @@ async function generateEntryId(): Promise<string> {
     `,
   );
   const currentMax = Number(rows[0]?.max_entry_id ?? 0);
-  return String(Math.max(currentMax + 1, 25000));
+  return String(Math.max(currentMax + 1, 250000));
 }
 
 async function generateUserId(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const id = String(crypto.randomInt(800000, 899999));
-    const [rows] = await pool.query<UserRow[]>('SELECT user_id FROM mock_users WHERE user_id = ? LIMIT 1', [id]);
-    if (!rows[0]) return id;
-  }
-  throw new Error('Could not generate unique user ID');
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `
+      SELECT MAX(CAST(user_id AS UNSIGNED)) AS max_user_id
+      FROM mock_users
+      WHERE user_id REGEXP '^[0-9]+$'
+    `,
+  );
+  const currentMax = Number(rows[0]?.max_user_id ?? 0);
+  return String(Math.max(currentMax + 1, 800000));
 }
 
 async function generateClubUserId(): Promise<string> {
@@ -929,8 +1197,8 @@ async function upsertEvent(input: JsonObject): Promise<JsonObject> {
       nullableString(input, 'name', 'Name'),
       nullableString(input, 'place', 'Place'),
       nullableNumber(input, 'stages', 'Stages') ?? (proxyOnly ? 1 : null),
-      nullableNumber(input, 'sportId') ?? (isPlainObject(input.Sport) ? nullableNumber(input.Sport as JsonObject, 'ID') : null) ?? (generatedRace ? 1 : null),
-      nullableNumber(input, 'levelId') ?? (isPlainObject(input.Level) ? nullableNumber(input.Level as JsonObject, 'ID') : null) ?? (generatedRace ? 4 : null),
+      nullableSportName(input, 'sport', 'sportId', 'Sport') ?? (generatedRace ? 'OB' : null),
+      nullableLevelNames(input, 'levels', 'levelIds', 'levelId', 'Level') ?? (generatedRace ? 'OŽ' : null),
       nullableString(input, 'ranking', 'Ranking') ?? (generatedRace ? '1' : null),
       nullableDateTime(input, 'entryDate1', 'EntryDate1'),
       nullableDateTime(input, 'entryDate2', 'EntryDate2'),
@@ -939,7 +1207,7 @@ async function upsertEvent(input: JsonObject): Promise<JsonObject> {
       nullableNumber(input, 'entryKoef3', 'EntryKoef3'),
       nullableDateTime(input, 'entryStart', 'EntryStart'),
       nullableString(input, 'org', 'Org1Abbr') ?? (generatedRace ? config.defaultClubAbbr : null),
-      nullableString(input, 'regionId') ?? (generatedRace ? 'JM' : null),
+      nullableIdList(input, 'regionIds', 'regionId', 'Regions') ?? (generatedRace ? 'JM' : null),
       nullableBool(input, 'cancelled', 'Cancelled'),
       proxyOnly ? 1 : 0,
     ],
@@ -1401,6 +1669,8 @@ async function handleEditClubUser(req: Request, res: Response): Promise<void> {
 }
 
 async function handleOrisApi(req: Request, res: Response): Promise<void> {
+  attachApiLogger(req, res);
+
   if (await maybeApplyFaultMode(req, res)) return;
 
   const method = asString(req.query.method ?? req.body.method);
@@ -1453,17 +1723,97 @@ async function handleOrisApi(req: Request, res: Response): Promise<void> {
   }
 }
 
-function renderAdminPage(settings: MockSettings, events: EventRow[], users: UserRow[], entries: EntryRow[]): string {
+function renderTestbenchPage(
+  settings: MockSettings,
+  events: EventRow[],
+  users: UserRow[],
+  entries: EntryRow[],
+  classesByEvent: Record<string, EventClassRow[]>,
+  logText: string,
+): string {
+  const apiLink = (label: string, params: Record<string, string>) => (
+    `<a href="/API/?${new URLSearchParams({ format: 'json', ...params }).toString()}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`
+  );
+  const eventLabel = (eventId: string) => {
+    const event = events.find((row) => row.id === eventId);
+    return event ? `${event.id} ${event.name ?? ''}`.trim() : eventId;
+  };
+  const userByClubUserId = new Map(users.map((row) => [row.club_user_id ?? row.user_id, row]));
+  const userLabel = (clubUserId: string | null) => {
+    if (!clubUserId) return '';
+    const user = userByClubUserId.get(clubUserId);
+    if (!user) return clubUserId;
+    return `${clubUserId} ${user.reg_no ?? ''} ${user.last_name ?? ''} ${user.first_name ?? ''}`.trim();
+  };
   const eventRows = events.map((row) => (
-    `<tr><td>${escapeHtml(row.id)}</td><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.place)}</td></tr>`
+    `<tr>
+      <td>${escapeHtml(row.id)}</td>
+      <td>${escapeHtml(row.date)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${escapeHtml(row.place)}</td>
+      <td class="links">
+        ${apiLink('getEvent', { method: 'getEvent', id: row.id })}
+        ${apiLink('getEventEntries', { method: 'getEventEntries', eventid: row.id })}
+        ${apiLink('getEventServiceEntries', { method: 'getEventServiceEntries', eventid: row.id })}
+      </td>
+      <td class="actions">
+        <button type="button" class="small edit-row" data-table="races" data-id="${escapeHtml(row.id)}">Edit</button>
+        <button type="button" class="small danger delete-row" data-table="races" data-id="${escapeHtml(row.id)}">Delete</button>
+      </td>
+    </tr>`
   )).join('');
   const userRows = users.map((row) => (
-    `<tr><td>${escapeHtml(row.user_id)}</td><td>${escapeHtml(row.reg_no)}</td><td>${escapeHtml(row.last_name)} ${escapeHtml(row.first_name)}</td><td>${escapeHtml(row.si)}</td></tr>`
+    `<tr>
+      <td>${escapeHtml(row.user_id)}</td>
+      <td>${escapeHtml(row.club_user_id)}</td>
+      <td>${escapeHtml(row.reg_no)}</td>
+      <td>${escapeHtml(row.last_name)} ${escapeHtml(row.first_name)}</td>
+      <td>${escapeHtml(row.si)}</td>
+      <td class="links">
+        ${apiLink('getUser', { method: 'getUser', userid: row.user_id })}
+        ${row.reg_no ? apiLink('getUser reg', { method: 'getUser', rgnum: row.reg_no }) : ''}
+        ${apiLink('getClubUsers', { method: 'getClubUsers', user: row.user_id })}
+      </td>
+      <td class="actions">
+        <button type="button" class="small edit-row" data-table="users" data-id="${escapeHtml(row.user_id)}">Edit</button>
+        <button type="button" class="small danger delete-row" data-table="users" data-id="${escapeHtml(row.user_id)}">Delete</button>
+      </td>
+    </tr>`
   )).join('');
-  const entryRows = entries.map((row) => (
-    `<tr><td>${escapeHtml(row.entry_id)}</td><td>${escapeHtml(row.event_id)}</td><td>${escapeHtml(row.reg_no)}</td><td>${escapeHtml(row.class_desc)}</td></tr>`
-  )).join('');
+  const entryRows = entries.map((row) => {
+    const userId = row.club_user_id ?? '';
+    return `<tr>
+      <td>${escapeHtml(row.entry_id)}</td>
+      <td>${escapeHtml(eventLabel(row.event_id))}</td>
+      <td>${escapeHtml(userLabel(userId))}</td>
+      <td>${escapeHtml(row.class_desc ?? row.class_id)}</td>
+      <td class="links">
+        ${apiLink('getEventEntries', { method: 'getEventEntries', eventid: row.event_id })}
+        ${apiLink('getEvent', { method: 'getEvent', id: row.event_id })}
+        ${row.reg_no ? apiLink('getUser', { method: 'getUser', rgnum: row.reg_no }) : ''}
+      </td>
+      <td class="actions">
+        <button type="button" class="small edit-row" data-table="participants" data-id="${escapeHtml(row.entry_id)}">Edit</button>
+        <button type="button" class="small danger delete-row" data-table="participants" data-id="${escapeHtml(row.entry_id)}">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
   const selected = (mode: RuntimeMode) => (settings.mode === mode ? 'selected' : '');
+  const testbenchData = {
+    races: events,
+    users,
+    participants: entries,
+    classesByEvent,
+    sports: ORIS_SPORTS,
+    levels: ORIS_LEVELS,
+    regions: ORIS_REGIONS,
+    defaults: {
+      date: todayPlus(30),
+      entryDate1: dateTimeLocalPlus(20),
+      regNo: `${config.defaultClubAbbr}9999`,
+      year: new Date().getUTCFullYear(),
+    },
+  };
 
   return `<!doctype html>
 <html lang="en">
@@ -1471,47 +1821,86 @@ function renderAdminPage(settings: MockSettings, events: EventRow[], users: User
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ORIS Mock</title>
+  <link rel="icon" type="image/svg+xml" href="${TESTBENCH_BASE}/favicon.svg" />
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; color: #1f2933; background: #f6f8fb; }
-    main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 40px; }
-    h1, h2 { margin: 0 0 12px; }
-    section { margin: 0 0 24px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-    form, .panel { background: #fff; border: 1px solid #d9e2ec; padding: 16px; border-radius: 8px; }
-    label { display: block; margin: 0 0 10px; }
-    input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #bcccdc; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #202a36; background: #f7f9fc; }
+    main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1, h2 { margin: 0; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; }
+    p { margin: 8px 0 16px; }
+    code { background: #e9eef5; padding: 2px 5px; border-radius: 4px; }
+    .settings { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; align-items: end; margin: 0; }
+    label { display: block; font-size: 12px; font-weight: 700; color: #52616f; }
+    input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #bcccdc; font: inherit; }
+    input, textarea, select { margin-top: 5px; background: #fff; color: #202a36; }
+    textarea { min-height: 78px; resize: vertical; }
     button { border: 0; background: #0b5cad; color: #fff; font-weight: 700; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d9e2ec; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4e7eb; }
-    th { background: #edf2f7; }
-    code { background: #edf2f7; padding: 2px 5px; border-radius: 4px; }
+    button.secondary { background: #52616f; }
+    button.danger { background: #b42318; }
+    button.small { width: auto; padding: 6px 10px; font-size: 12px; }
+    .tabbar { display: flex; gap: 6px; border-bottom: 1px solid #ccd6e0; margin-top: 4px; }
+    .tabbar button { width: auto; color: #202a36; background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; padding: 10px 14px; }
+    .tabbar button.right-tab { margin-left: auto; }
+    .tabbar button.active { background: #fff; border-color: #ccd6e0; color: #0b5cad; }
+    .tab { display: none; background: #fff; border: 1px solid #ccd6e0; border-top: 0; padding: 14px; }
+    .tab.active { display: block; }
+    .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
+    .toolbar button, .toolbar form { width: auto; margin: 0; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 780px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4e7eb; vertical-align: top; }
+    th { background: #edf2f7; font-size: 12px; color: #52616f; }
+    td.links { min-width: 210px; }
+    .links a { display: inline-block; margin: 0 8px 4px 0; color: #0b5cad; }
+    .actions { display: flex; gap: 6px; align-items: center; }
+    pre.log { min-height: 420px; max-height: 620px; overflow: auto; margin: 0; padding: 12px; background: #111827; color: #e5e7eb; border-radius: 6px; white-space: pre-wrap; }
+    dialog { width: min(720px, calc(100% - 28px)); border: 1px solid #bcccdc; border-radius: 8px; padding: 0; }
+    dialog::backdrop { background: rgba(17, 24, 39, .45); }
+    .dialog-head, .dialog-actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #e4e7eb; }
+    .dialog-actions { border-top: 1px solid #e4e7eb; border-bottom: 0; justify-content: flex-end; }
+    .dialog-actions button { width: auto; min-width: 96px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px; }
+    .form-grid .wide { grid-column: 1 / -1; }
+    fieldset.choice-field { margin: 0; padding: 0; border: 0; }
+    fieldset.choice-field legend { margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #52616f; }
+    .choice-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 12px; padding: 10px; border: 1px solid #bcccdc; border-radius: 6px; }
+    .choice-group label { display: flex; gap: 7px; align-items: flex-start; font-size: 13px; font-weight: 400; color: #202a36; }
+    .choice-group input { width: auto; margin: 2px 0 0; }
+    @media (max-width: 720px) {
+      .settings, .form-grid { grid-template-columns: 1fr; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>ORIS Mock</h1>
     <p>ORIS-compatible endpoint: <code>/API/</code>. Upstream fallback: <code>${escapeHtml(config.upstreamBaseUrl)}</code>.</p>
-    <section class="grid">
-      <form method="post" action="/__admin/races">
-        <h2>Create Race</h2>
-        <label>ID <input name="id" /></label>
-        <label>Name <input name="name" value="Proxy ORIS race" /></label>
-        <label>Date <input name="date" type="date" value="${todayPlus(30)}" /></label>
-        <label>ORIS entry start <input name="entryStart" type="datetime-local" value="${dateTimeLocalPlus(10)}" /></label>
-        <label>First entry deadline <input name="entryDate1" type="datetime-local" value="${dateTimeLocalPlus(20)}" /></label>
-        <label>Place <input name="place" value="Proxy place" /></label>
-        <button type="submit">Create race</button>
-      </form>
-      <form method="post" action="/__admin/users">
-        <h2>Create User</h2>
-        <label>RegNo <input name="regNo" value="${escapeHtml(config.defaultClubAbbr)}9999" /></label>
-        <label>First name <input name="firstName" value="Proxy" /></label>
-        <label>Last name <input name="lastName" value="Runner" /></label>
-        <label>SI <input name="si" /></label>
-        <button type="submit">Create user</button>
-      </form>
-      <form method="post" action="/__admin/settings">
-        <h2>Network disturbance</h2>
+
+    <nav class="tabbar" aria-label="Testbench tables">
+      <button type="button" data-tab="races" class="active">Races</button>
+      <button type="button" data-tab="users">Users</button>
+      <button type="button" data-tab="participants">Participants</button>
+      <button type="button" data-tab="network" class="right-tab">Network</button>
+      <button type="button" data-tab="log">Log</button>
+    </nav>
+
+    <section id="tab-races" class="tab active">
+      <div class="toolbar"><h2>Races</h2><button type="button" class="create-row" data-table="races">Create</button></div>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Date</th><th>Name</th><th>Place</th><th>API requests</th><th>Action</th></tr></thead><tbody>${eventRows}</tbody></table></div>
+    </section>
+    <section id="tab-users" class="tab">
+      <div class="toolbar"><h2>Users</h2><button type="button" class="create-row" data-table="users">Create</button></div>
+      <div class="table-wrap"><table><thead><tr><th>User ID</th><th>Club user ID</th><th>RegNo</th><th>Name</th><th>SI</th><th>API requests</th><th>Action</th></tr></thead><tbody>${userRows}</tbody></table></div>
+    </section>
+    <section id="tab-participants" class="tab">
+      <div class="toolbar"><h2>Participants</h2><button type="button" class="create-row" data-table="participants">Create</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Entry ID</th><th>Race</th><th>User</th><th>Class</th><th>API requests</th><th>Action</th></tr></thead><tbody>${entryRows}</tbody></table></div>
+    </section>
+    <section id="tab-network" class="tab">
+      <div class="toolbar"><h2>Network</h2></div>
+      <form class="settings" method="post" action="${TESTBENCH_BASE}/settings">
         <label>Mode
           <select name="mode">
             <option value="normal" ${selected('normal')}>normal</option>
@@ -1531,10 +1920,408 @@ function renderAdminPage(settings: MockSettings, events: EventRow[], users: User
         <button type="submit">Save settings</button>
       </form>
     </section>
-    <section><h2>Races</h2><table><thead><tr><th>ID</th><th>Date</th><th>Name</th><th>Place</th></tr></thead><tbody>${eventRows}</tbody></table></section>
-    <section><h2>Users</h2><table><thead><tr><th>User ID</th><th>RegNo</th><th>Name</th><th>SI</th></tr></thead><tbody>${userRows}</tbody></table></section>
-    <section><h2>Entries</h2><table><thead><tr><th>Entry ID</th><th>Event</th><th>RegNo</th><th>Class</th></tr></thead><tbody>${entryRows}</tbody></table></section>
+    <section id="tab-log" class="tab">
+      <div class="toolbar">
+        <h2>API request log</h2>
+        <form method="post" action="${TESTBENCH_BASE}/log/clear"><button type="submit" class="danger">Clear log</button></form>
+      </div>
+      <pre class="log">${escapeHtml(logText || 'No API requests logged yet.')}</pre>
+    </section>
+
+    <dialog id="editDialog">
+      <form id="editForm">
+        <div class="dialog-head">
+          <h2 id="dialogTitle">Edit</h2>
+          <button type="button" class="small secondary" id="closeDialog">Close</button>
+        </div>
+        <div id="dialogFields" class="form-grid"></div>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancelDialog">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
   </main>
+  <script>
+    const TESTBENCH_DATA = ${jsonScript(testbenchData)};
+    const tableTitles = { races: 'Race', users: 'User', participants: 'Participant' };
+    const rowKeys = { races: 'id', users: 'user_id', participants: 'entry_id' };
+    const fieldConfig = {
+      races: [
+        { name: 'id', row: 'id', label: 'ID', readOnlyOnEdit: true },
+        { name: 'proxyOnly', row: 'proxy_only', label: 'Proxy only', type: 'checkbox', defaultValue: true },
+        { name: 'name', row: 'name', label: 'Name', defaultValue: 'Proxy ORIS race' },
+        { name: 'date', row: 'date', label: 'Date', type: 'date', defaultName: 'date' },
+        { name: 'place', row: 'place', label: 'Place', defaultValue: 'Proxy place' },
+        { name: 'entryStart', row: 'entry_start', label: 'Entry start', type: 'datetime-local' },
+        { name: 'entryDate1', row: 'entry_date1', label: 'Entry deadline 1', type: 'datetime-local', defaultName: 'entryDate1' },
+        { name: 'entryDate2', row: 'entry_date2', label: 'Entry deadline 2', type: 'datetime-local' },
+        { name: 'entryDate3', row: 'entry_date3', label: 'Entry deadline 3', type: 'datetime-local' },
+        { name: 'stages', row: 'stages', label: 'Stages', type: 'number', defaultValue: 1 },
+        { name: 'sport', row: 'sport_id', label: 'Sport', type: 'select', source: 'sports', defaultValue: 'OB' },
+        { name: 'levels', row: 'level_id', label: 'Levels', type: 'checkboxGroup', source: 'levels', defaultValue: ['OŽ'], wide: true },
+        { name: 'ranking', row: 'ranking', label: 'Ranking', defaultValue: '1' },
+        { name: 'org', row: 'org_abbr', label: 'Org abbr' },
+        { name: 'regionIds', row: 'region_id', label: 'Oblast', type: 'checkboxGroup', source: 'regions', defaultValue: ['JM'], wide: true },
+        { name: 'classes', label: 'Classes', type: 'classList', defaultValue: 'H21;D21;H35', wide: true },
+        { name: 'cancelled', row: 'cancelled', label: 'Cancelled', type: 'checkbox' },
+      ],
+      users: [
+        { name: 'userId', row: 'user_id', label: 'User ID', readOnlyOnEdit: true },
+        { name: 'proxyOnly', row: 'proxy_only', label: 'Proxy only', type: 'checkbox', defaultValue: true },
+        { name: 'clubUserId', row: 'club_user_id', label: 'Club user ID' },
+        { name: 'regNo', row: 'reg_no', label: 'RegNo', defaultName: 'regNo' },
+        { name: 'firstName', row: 'first_name', label: 'First name', defaultValue: 'Proxy' },
+        { name: 'lastName', row: 'last_name', label: 'Last name', defaultValue: 'Runner' },
+        { name: 'si', row: 'si', label: 'SI' },
+        { name: 'clubId', row: 'club_id', label: 'Club ID' },
+        { name: 'licence', row: 'licence', label: 'Licence' },
+        { name: 'sport', row: 'sport', label: 'Sport', type: 'number', defaultValue: 1 },
+        { name: 'year', row: 'year', label: 'Year', type: 'number', defaultName: 'year' },
+      ],
+      participants: [
+        { name: 'entryId', row: 'entry_id', label: 'Entry ID', readOnlyOnEdit: true },
+        { name: 'proxyOnly', row: 'proxy_only', label: 'Proxy only', type: 'checkbox', defaultValue: true },
+        { name: 'eventId', row: 'event_id', label: 'Race', type: 'select', source: 'races' },
+        { name: 'clubUserId', row: 'club_user_id', label: 'User', type: 'select', source: 'users' },
+        { name: 'classChoice', label: 'Class', type: 'select', source: 'classes', wide: true },
+        { name: 'name', row: 'name', label: 'Name' },
+        { name: 'rentSI', row: 'rent_si', label: 'Rent SI', type: 'checkbox' },
+        { name: 'licence', row: 'licence', label: 'Licence' },
+        { name: 'fee', row: 'fee', label: 'Fee', type: 'number' },
+        { name: 'entryStop', row: 'entry_stop', label: 'Entry stop', type: 'number' },
+        { name: 'si', row: 'si', label: 'SI' },
+        { name: 'note', row: 'note', label: 'Note', type: 'textarea', wide: true },
+      ],
+    };
+
+    const dialog = document.getElementById('editDialog');
+    const form = document.getElementById('editForm');
+    const fields = document.getElementById('dialogFields');
+    const title = document.getElementById('dialogTitle');
+    let currentTable = 'races';
+    let currentMode = 'create';
+    let currentRow = null;
+
+    function localDateTime(value) {
+      if (!value) return '';
+      return String(value).replace(' ', 'T').slice(0, 16);
+    }
+
+    function rowValue(row, field) {
+      if (!row) {
+        if (field.defaultName) return TESTBENCH_DATA.defaults[field.defaultName] ?? '';
+        return field.defaultValue ?? '';
+      }
+      if (field.name === 'classChoice') {
+        return classChoiceValue(row);
+      }
+      if (field.type === 'classList') {
+        const classRows = TESTBENCH_DATA.classesByEvent[row.id] || [];
+        if (classRows.length === 0 && row.proxy_only) return field.defaultValue ?? '';
+        return classRows.filter((item) => !item.deleted).map((item) => item.name || item.class_id).join(';');
+      }
+      if (field.type === 'checkboxGroup') {
+        return String(row[field.row ?? field.name] || '').split(',').map((item) => item.trim()).filter(Boolean);
+      }
+      return row[field.row ?? field.name] ?? '';
+    }
+
+    function raceOptions() {
+      return TESTBENCH_DATA.races.map((race) => ({
+        value: race.id,
+        label: [race.id, race.date, race.name].filter(Boolean).join(' - '),
+      }));
+    }
+
+    function userOptions() {
+      return TESTBENCH_DATA.users.map((user) => {
+        const value = user.club_user_id || user.user_id;
+        return {
+          value,
+          label: [value, user.reg_no, user.last_name, user.first_name].filter(Boolean).join(' - '),
+        };
+      });
+    }
+
+    function classOptions(eventId) {
+      const classRows = TESTBENCH_DATA.classesByEvent[eventId] || [];
+      return classRows
+        .filter((item) => !item.deleted)
+        .map((item) => ({
+          value: JSON.stringify({ id: item.class_id, name: item.name || item.class_id }),
+          label: [item.class_id, item.name].filter(Boolean).join(' - '),
+        }));
+    }
+
+    function listOptions(source) {
+      return (TESTBENCH_DATA[source] || []).map((item) => ({
+        value: source === 'sports' || source === 'levels' ? item.name : item.id,
+        label: source === 'sports' || source === 'levels'
+          ? [item.name, item.description].filter(Boolean).join(' - ')
+          : [item.id, item.name].filter(Boolean).join(' - '),
+      }));
+    }
+
+    function classChoiceValue(row) {
+      const currentId = String(row.class_id || '');
+      const currentName = String(row.class_desc || '');
+      for (const option of classOptions(row.event_id || '')) {
+        const cls = JSON.parse(option.value);
+        if (String(cls.id) === currentId || String(cls.name) === currentName || String(cls.name) === currentId) {
+          return option.value;
+        }
+      }
+      return JSON.stringify({ id: currentId, name: currentName });
+    }
+
+    function optionList(field, row) {
+      if (field.source === 'races') return raceOptions();
+      if (field.source === 'users') return userOptions();
+      if (field.source === 'classes') {
+        const eventId = document.querySelector('[name="eventId"]')?.value || row?.event_id || '';
+        return classOptions(eventId);
+      }
+      if (field.source === 'sports' || field.source === 'levels' || field.source === 'regions') {
+        return listOptions(field.source);
+      }
+      return [];
+    }
+
+    function renderField(field, row) {
+      if (field.type === 'checkboxGroup') {
+        const fieldset = document.createElement('fieldset');
+        fieldset.className = 'choice-field' + (field.wide ? ' wide' : '');
+        const legend = document.createElement('legend');
+        legend.textContent = field.label;
+        fieldset.appendChild(legend);
+        const group = document.createElement('div');
+        group.className = 'choice-group';
+        const selectedValues = new Set(rowValue(row, field).map(String));
+        for (const option of optionList(field, row)) {
+          const itemLabel = document.createElement('label');
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.name = field.name;
+          input.value = option.value;
+          input.checked = selectedValues.has(String(option.value));
+          itemLabel.append(input, document.createTextNode(option.label));
+          group.appendChild(itemLabel);
+        }
+        fieldset.appendChild(group);
+        return fieldset;
+      }
+
+      const label = document.createElement('label');
+      if (field.wide) label.className = 'wide';
+      label.textContent = field.label;
+      const value = rowValue(row, field);
+      let control;
+
+      if (field.type === 'textarea') {
+        control = document.createElement('textarea');
+        control.value = value;
+      } else if (field.type === 'select') {
+        control = document.createElement('select');
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = '-';
+        control.appendChild(empty);
+        for (const option of optionList(field, row)) {
+          const item = document.createElement('option');
+          item.value = option.value;
+          item.textContent = option.label;
+          if (String(option.value) === String(value)) item.selected = true;
+          control.appendChild(item);
+        }
+      } else {
+        control = document.createElement('input');
+        control.type = field.type === 'classList' ? 'text' : field.type || 'text';
+        if (field.type === 'checkbox') {
+          control.checked = value === true || value === 1 || value === '1';
+        } else if (field.type === 'datetime-local') {
+          control.value = localDateTime(value);
+        } else {
+          control.value = value;
+        }
+      }
+
+      control.name = field.name;
+      if (field.readOnlyOnEdit && currentMode === 'edit') control.readOnly = true;
+      label.appendChild(control);
+      return label;
+    }
+
+    function refreshClassSelect() {
+      const select = document.querySelector('[name="classChoice"]');
+      if (!select) return;
+      const current = select.value;
+      select.replaceChildren();
+      const empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = '-';
+      select.appendChild(empty);
+      for (const option of classOptions(document.querySelector('[name="eventId"]')?.value || '')) {
+        const item = document.createElement('option');
+        item.value = option.value;
+        item.textContent = option.label;
+        if (option.value === current) item.selected = true;
+        select.appendChild(item);
+      }
+    }
+
+    function openEditor(table, mode, row = null) {
+      currentTable = table;
+      currentMode = mode;
+      currentRow = row;
+      title.textContent = (mode === 'create' ? 'Create ' : 'Edit ') + tableTitles[table];
+      fields.replaceChildren(...fieldConfig[table].map((field) => renderField(field, row)));
+      document.querySelector('[name="eventId"]')?.addEventListener('change', refreshClassSelect);
+      dialog.showModal();
+    }
+
+    function tableRow(table, id) {
+      const key = rowKeys[table];
+      return TESTBENCH_DATA[table].find((row) => String(row[key]) === String(id)) || null;
+    }
+
+    function payloadFromForm() {
+      const payload = {};
+      for (const field of fieldConfig[currentTable]) {
+        if (field.type === 'checkboxGroup') {
+          payload[field.name] = Array.from(form.querySelectorAll('input[name="' + field.name + '"]:checked')).map((input) => input.value);
+          continue;
+        }
+        const control = form.elements.namedItem(field.name);
+        if (!control) continue;
+        if (field.type === 'checkbox') {
+          payload[field.name] = control.checked;
+        } else {
+          payload[field.name] = control.value;
+        }
+      }
+
+      if (currentTable === 'participants') {
+        const selectedUser = TESTBENCH_DATA.users.find((user) => (user.club_user_id || user.user_id) === payload.clubUserId);
+        if (selectedUser) {
+          payload.regNo = selectedUser.reg_no || '';
+          if (!payload.name) payload.name = [selectedUser.last_name, selectedUser.first_name].filter(Boolean).join(' ');
+          if (!payload.licence) payload.licence = selectedUser.licence || '';
+          if (!payload.si) payload.si = selectedUser.si || '';
+        }
+        if (payload.classChoice) {
+          const selectedClass = JSON.parse(payload.classChoice);
+          payload.classId = selectedClass.id;
+          payload.classDesc = selectedClass.name;
+        }
+        delete payload.classChoice;
+      }
+
+      if (currentTable === 'races') {
+        const classRows = TESTBENCH_DATA.classesByEvent[currentRow?.id || ''] || [];
+        const activeClasses = classRows.filter((item) => !item.deleted);
+        payload.classes = String(payload.classes ?? '')
+          .split(';')
+          .map((name) => name.trim())
+          .filter(Boolean)
+          .map((name) => {
+            const existing = activeClasses.find((item) => (item.name || item.class_id) === name);
+            return existing
+              ? { ID: existing.class_id, Name: name, Fee: existing.fee ?? 150 }
+              : { Name: name, Fee: 150 };
+          });
+        payload.replaceClasses = true;
+      }
+
+      for (const [key, value] of Object.entries(payload)) {
+        if (value === '') delete payload[key];
+      }
+      return payload;
+    }
+
+    function endpointFor(payload) {
+      if (currentTable === 'races') {
+        return currentMode === 'edit'
+          ? { url: '${TESTBENCH_BASE}/api/races/' + encodeURIComponent(currentRow.id), method: 'PUT' }
+          : { url: '${TESTBENCH_BASE}/api/races', method: 'POST' };
+      }
+      if (currentTable === 'users') {
+        return currentMode === 'edit'
+          ? { url: '${TESTBENCH_BASE}/api/users/' + encodeURIComponent(currentRow.user_id), method: 'PUT' }
+          : { url: '${TESTBENCH_BASE}/api/users', method: 'POST' };
+      }
+      return currentMode === 'edit'
+        ? { url: '${TESTBENCH_BASE}/api/entries/' + encodeURIComponent(currentRow.entry_id), method: 'PUT' }
+        : { url: '${TESTBENCH_BASE}/api/races/' + encodeURIComponent(payload.eventId || '') + '/entries', method: 'POST' };
+    }
+
+    function deleteEndpointFor(table, row) {
+      if (table === 'races') {
+        return '${TESTBENCH_BASE}/api/races/' + encodeURIComponent(row.id);
+      }
+      if (table === 'users') {
+        const params = new URLSearchParams();
+        if (row.reg_no) params.set('regNo', row.reg_no);
+        if (row.sport) params.set('sport', row.sport);
+        if (row.year) params.set('year', row.year);
+        const query = params.toString();
+        return '${TESTBENCH_BASE}/api/users/' + encodeURIComponent(row.user_id) + (query ? '?' + query : '');
+      }
+      return '${TESTBENCH_BASE}/api/entries/' + encodeURIComponent(row.entry_id);
+    }
+
+    function rowTitle(table, row) {
+      if (table === 'races') return [row.id, row.name].filter(Boolean).join(' - ');
+      if (table === 'users') return [row.user_id, row.reg_no, row.last_name, row.first_name].filter(Boolean).join(' - ');
+      return [row.entry_id, row.event_id, row.class_desc || row.class_id].filter(Boolean).join(' - ');
+    }
+
+    async function deleteRow(table, id) {
+      const row = tableRow(table, id);
+      if (!row) return;
+      if (!confirm('Delete ' + tableTitles[table].toLowerCase() + ' ' + rowTitle(table, row) + '?')) return;
+      const response = await fetch(deleteEndpointFor(table, row), { method: 'DELETE' });
+      if (!response.ok) {
+        alert('Delete failed: HTTP ' + response.status);
+        return;
+      }
+      window.location.href = '${TESTBENCH_BASE}?tab=' + encodeURIComponent(table);
+    }
+
+    async function saveCurrent(event) {
+      event.preventDefault();
+      const payload = payloadFromForm();
+      if (currentTable === 'participants' && !payload.eventId) {
+        alert('Choose a race first.');
+        return;
+      }
+      const endpoint = endpointFor(payload);
+      const response = await fetch(endpoint.url, {
+        method: endpoint.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        alert('Save failed: HTTP ' + response.status);
+        return;
+      }
+      window.location.href = '${TESTBENCH_BASE}?tab=' + encodeURIComponent(currentTable);
+    }
+
+    function activateTab(tab) {
+      document.querySelectorAll('.tabbar button').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
+      document.querySelectorAll('.tab').forEach((panel) => panel.classList.toggle('active', panel.id === 'tab-' + tab));
+    }
+
+    document.querySelectorAll('.tabbar button').forEach((button) => button.addEventListener('click', () => activateTab(button.dataset.tab)));
+    document.querySelectorAll('.create-row').forEach((button) => button.addEventListener('click', () => openEditor(button.dataset.table, 'create')));
+    document.querySelectorAll('.edit-row').forEach((button) => button.addEventListener('click', () => openEditor(button.dataset.table, 'edit', tableRow(button.dataset.table, button.dataset.id))));
+    document.querySelectorAll('.delete-row').forEach((button) => button.addEventListener('click', () => deleteRow(button.dataset.table, button.dataset.id)));
+    document.getElementById('closeDialog').addEventListener('click', () => dialog.close());
+    document.getElementById('cancelDialog').addEventListener('click', () => dialog.close());
+    form.addEventListener('submit', saveCurrent);
+    activateTab(new URLSearchParams(window.location.search).get('tab') || 'races');
+  </script>
 </body>
 </html>`;
 }
@@ -1563,38 +2350,58 @@ async function main(): Promise<void> {
   app.all('/API/', handleOrisApi);
   app.all('/API', handleOrisApi);
 
-  app.get('/__admin', async (_req, res) => {
+  app.get(testbenchPath('/favicon.svg'), (_req, res) => {
+    res.type('image/svg+xml').sendFile(TESTBENCH_FAVICON_FILE);
+  });
+
+  app.get(testbenchPath(), async (_req, res) => {
     const settings = await getSettings();
     const [events] = await pool.query<EventRow[]>('SELECT * FROM mock_events WHERE deleted = 0 ORDER BY updated_at DESC LIMIT 100');
     const [users] = await pool.query<UserRow[]>('SELECT * FROM mock_users WHERE deleted = 0 ORDER BY updated_at DESC LIMIT 100');
     const [entries] = await pool.query<EntryRow[]>('SELECT * FROM mock_entries WHERE deleted = 0 ORDER BY updated_at DESC LIMIT 100');
-    res.type('html').send(renderAdminPage(settings, events, users, entries));
+    const classPairs = await Promise.all(events.map(async (event) => [event.id, await getEventClasses(event.id)] as const));
+    const classesByEvent = Object.fromEntries(classPairs);
+    res.type('html').send(renderTestbenchPage(settings, events, users, entries, classesByEvent, await readApiLog()));
   });
 
-  app.post('/__admin/races', async (req, res) => {
+  app.post(testbenchPath('/races'), async (req, res) => {
     await upsertEvent(req.body);
-    res.redirect('/__admin');
+    res.redirect(TESTBENCH_BASE);
   });
 
-  app.post('/__admin/users', async (req, res) => {
+  app.post(testbenchPath('/users'), async (req, res) => {
     await upsertUser(req.body);
-    res.redirect('/__admin');
+    res.redirect(TESTBENCH_BASE);
   });
 
-  app.post('/__admin/settings', async (req, res) => {
+  app.post(testbenchPath('/settings'), async (req, res) => {
     await updateSettings({
       mode: req.body.mode as RuntimeMode | undefined,
       responseDelayMs: req.body.responseDelayMs === undefined ? undefined : asNumber(req.body.responseDelayMs, 0),
       forceStatusCode: req.body.forceStatusCode === undefined ? undefined : asNumber(req.body.forceStatusCode, 503),
     });
-    res.redirect('/__admin');
+    res.redirect(`${TESTBENCH_BASE}?tab=network`);
   });
 
-  app.get('/__admin/api/settings', async (_req, res) => {
+  app.post(testbenchPath('/log/clear'), async (_req, res) => {
+    await clearApiLog();
+    res.redirect(`${TESTBENCH_BASE}?tab=log`);
+  });
+
+  app.get(testbenchPath('/api/log'), async (_req, res) => {
+    res.json({ log: await readApiLog() });
+  });
+
+  app.delete(testbenchPath('/api/log'), async (_req, res) => {
+    await clearApiLog();
+    res.json({ ok: true });
+  });
+
+  app.get(testbenchPath('/api/settings'), async (_req, res) => {
     res.json(await getSettings());
   });
 
-  app.post('/__admin/api/settings', async (req, res) => {
+  app.post(testbenchPath('/api/settings'), async (req, res) => {
     const settings = await updateSettings({
       mode: req.body.mode as RuntimeMode | undefined,
       responseDelayMs: req.body.responseDelayMs === undefined ? undefined : asNumber(req.body.responseDelayMs, 0),
@@ -1604,7 +2411,7 @@ async function main(): Promise<void> {
     res.json(settings);
   });
 
-  app.post('/__admin/api/reset', async (_req, res) => {
+  app.post(testbenchPath('/api/reset'), async (_req, res) => {
     await pool.query('DELETE FROM mock_entries');
     await pool.query('DELETE FROM mock_services');
     await pool.query('DELETE FROM mock_event_classes');
@@ -1614,21 +2421,21 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  app.get('/__admin/api/races', async (_req, res) => {
+  app.get(testbenchPath('/api/races'), async (_req, res) => {
     const [rows] = await pool.query<EventRow[]>('SELECT * FROM mock_events WHERE deleted = 0 ORDER BY updated_at DESC');
     const races = await Promise.all(rows.map((row) => getEvent(row.id)));
     res.json({ races: races.filter(Boolean) });
   });
 
-  app.post('/__admin/api/races', async (req, res) => {
+  app.post(testbenchPath('/api/races'), async (req, res) => {
     res.status(201).json({ race: await upsertEvent(req.body) });
   });
 
-  app.put('/__admin/api/races/:id', async (req, res) => {
+  app.put(testbenchPath('/api/races/:id'), async (req, res) => {
     res.json({ race: await upsertEvent({ ...req.body, id: req.params.id }) });
   });
 
-  app.delete('/__admin/api/races/:id', async (req, res) => {
+  app.delete(testbenchPath('/api/races/:id'), async (req, res) => {
     await pool.query(
       `
         INSERT INTO mock_events (id, proxy_only, deleted)
@@ -1640,16 +2447,20 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  app.post('/__admin/api/users', async (req, res) => {
+  app.post(testbenchPath('/api/users'), async (req, res) => {
     res.status(201).json({ user: await upsertUser(req.body) });
   });
 
-  app.get('/__admin/api/users', async (_req, res) => {
+  app.get(testbenchPath('/api/users'), async (_req, res) => {
     const [rows] = await pool.query<UserRow[]>('SELECT * FROM mock_users WHERE deleted = 0 ORDER BY updated_at DESC');
     res.json({ users: rows.map((row) => ({ ...composeUser(row, null), proxy_only: !!row.proxy_only })) });
   });
 
-  app.delete('/__admin/api/users/:userId', async (req, res) => {
+  app.put(testbenchPath('/api/users/:userId'), async (req, res) => {
+    res.json({ user: await upsertUser({ ...req.body, userId: req.params.userId }) });
+  });
+
+  app.delete(testbenchPath('/api/users/:userId'), async (req, res) => {
     const sport = asNumber(firstValue(req.query.sport), 1);
     const year = asNumber(firstValue(req.query.year), new Date().getUTCFullYear());
     await pool.query(
@@ -1663,9 +2474,15 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  app.get('/__admin/api/races/:eventId/entries', async (req, res) => {
-    const event = await getEvent(req.params.eventId);
-    const [rows] = await pool.query<EntryRow[]>('SELECT * FROM mock_entries WHERE event_id = ? AND deleted = 0 ORDER BY updated_at DESC', [req.params.eventId]);
+  app.get([testbenchPath('/api/entries'), testbenchPath('/api/participants')], async (_req, res) => {
+    const [rows] = await pool.query<EntryRow[]>('SELECT * FROM mock_entries WHERE deleted = 0 ORDER BY updated_at DESC');
+    res.json({ participants: rows });
+  });
+
+  app.get(testbenchPath('/api/races/:eventId/entries'), async (req, res) => {
+    const eventId = asString(req.params.eventId);
+    const event = await getEvent(eventId);
+    const [rows] = await pool.query<EntryRow[]>('SELECT * FROM mock_entries WHERE event_id = ? AND deleted = 0 ORDER BY updated_at DESC', [eventId]);
     const entries = await Promise.all(rows.map(async (row) => {
       const user = row.club_user_id ? await getUserByClubUserId(row.club_user_id) : null;
       return { ...composeEntry(row, null, event, user), proxy_only: !!row.proxy_only };
@@ -1673,16 +2490,32 @@ async function main(): Promise<void> {
     res.json({ entries });
   });
 
-  app.post('/__admin/api/races/:eventId/entries', async (req, res) => {
+  app.post(testbenchPath('/api/races/:eventId/entries'), async (req, res) => {
     res.status(201).json({ entry: await upsertEntry({ ...req.body, eventId: req.params.eventId }) });
   });
 
-  app.delete('/__admin/api/entries/:entryId', async (req, res) => {
+  app.put(testbenchPath('/api/entries/:entryId'), async (req, res) => {
+    try {
+      res.json({ entry: await upsertEntry({ ...req.body, entryId: req.params.entryId }) });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Entry update failed' });
+    }
+  });
+
+  app.put(testbenchPath('/api/participants/:entryId'), async (req, res) => {
+    try {
+      res.json({ participant: await upsertEntry({ ...req.body, entryId: req.params.entryId }) });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Participant update failed' });
+    }
+  });
+
+  app.delete(testbenchPath('/api/entries/:entryId'), async (req, res) => {
     await pool.query('UPDATE mock_entries SET deleted = 1 WHERE entry_id = ?', [req.params.entryId]);
     res.json({ ok: true });
   });
 
-  app.delete('/__admin/api/races/:eventId/entries/:entryId', async (req, res) => {
+  app.delete(testbenchPath('/api/races/:eventId/entries/:entryId'), async (req, res) => {
     await pool.query(
       `
         INSERT INTO mock_entries (entry_id, event_id, proxy_only, deleted)
@@ -1694,7 +2527,7 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  app.post('/__admin/api/races/:eventId/services', async (req, res) => {
+  app.post(testbenchPath('/api/races/:eventId/services'), async (req, res) => {
     const serviceId = nullableString(req.body, 'serviceId', 'ID');
     await pool.query(
       'INSERT INTO mock_services (service_id, event_id, club_user_id, name, amount, note, proxy_only, deleted) VALUES (?, ?, ?, ?, ?, ?, 1, 0)',
@@ -1712,7 +2545,7 @@ async function main(): Promise<void> {
 
   app.listen(config.port, config.host, () => {
     console.log(`ORIS mock server listening on http://${config.host}:${config.port}`);
-    console.log(`Admin UI: http://127.0.0.1:${config.port}/__admin`);
+    console.log(`Testbench UI: http://127.0.0.1:${config.port}${TESTBENCH_BASE}`);
   });
 }
 

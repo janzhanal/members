@@ -38,7 +38,7 @@ Bank mock pro vývoj:
 docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:bank
 ```
 
-* admin UI: [http://127.0.0.1:10300/__admin](http://127.0.0.1:10300/__admin)
+* admin UI: [http://127.0.0.1:10300/__testbench](http://127.0.0.1:10300/__testbench)
 * API endpoint pro PHP konektor: `http://127.0.0.1:10300/rbcz/premium/api`
 * vývojová konfigurace v `docker/config/dev/_cfg.php` už používá `RaiffeisenbankMockConnector`
 
@@ -48,7 +48,7 @@ ORIS mock pro vývoj:
 docker compose -p members-dev -f docker-compose.dev.yml exec web npm run mock:oris
 ```
 
-* admin UI: [http://127.0.0.1:10301/__admin](http://127.0.0.1:10301/__admin)
+* admin UI: [http://127.0.0.1:10301/__testbench](http://127.0.0.1:10301/__testbench)
 * API endpoint pro ORIS mock: `http://127.0.0.1:10301/`
 * vývojová konfigurace v `docker/config/dev/_cfg.php` už používá mock server `http://127.0.0.1:10301/`
 
@@ -80,8 +80,8 @@ Dostupné služby:
 
 * [members](http://127.0.0.1:10090/members)
 * [phpMyAdmin](http://127.0.0.1:10091)
-* [bank](http://127.0.0.1:10093/__admin)
-* [ORIS](http://127.0.0.1:10094/__admin)
+* [bank](http://127.0.0.1:10093/__testbench)
+* [ORIS](http://127.0.0.1:10094/__testbench)
 
 ## Minimální konfigurace
 

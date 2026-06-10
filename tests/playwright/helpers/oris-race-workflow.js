@@ -200,12 +200,31 @@ async function getRaceRegistrationRow(page, reg, options = {}) {
   }, formatClubReg(reg));
 }
 
+function raceParticipantMap(participants) {
+  return Array.isArray(participants)
+    ? Object.assign({}, ...participants)
+    : participants;
+}
+
+async function readRaceParticipants(page, raceId, participants, options = {}) {
+  const groupId = options.groupId || 400;
+  const registrationPath = `./race_regs_all.php?gr_id=${groupId}&id=${raceId}`;
+  const participantMap = raceParticipantMap(participants);
+  const participantState = {};
+
+  await page.goto(registrationPath);
+
+  for (const reg of Object.keys(participantMap)) {
+    participantState[reg] = await getRaceRegistrationRow(page, reg);
+  }
+
+  return participantState;
+}
+
 async function ensureRaceParticipants(page, raceId, participants, options = {}) {
   const groupId = options.groupId || 400;
   const registrationPath = `./race_regs_all.php?gr_id=${groupId}&id=${raceId}`;
-  const participantMap = Array.isArray(participants)
-    ? Object.assign({}, ...participants)
-    : participants;
+  const participantMap = raceParticipantMap(participants);
 
   await page.goto(registrationPath);
 
@@ -244,12 +263,15 @@ async function ensureRaceParticipants(page, raceId, participants, options = {}) 
     returnUrlPattern: /race_regs_all\.php/,
   });
 
-  const verifiedParticipants = {};
+  const verifiedParticipants = await readRaceParticipants(
+    page,
+    raceId,
+    participants,
+    options
+  );
 
   for (const [reg, participant] of Object.entries(participantMap)) {
-    const row = await getRaceRegistrationRow(page, reg, {
-      path: reg === Object.keys(participantMap)[0] ? registrationPath : undefined,
-    });
+    const row = verifiedParticipants[reg];
 
     if (!row) {
       throw new Error(`Could not reload race registration row for reg ${formatClubReg(reg)} on race ${raceId}`);
@@ -269,7 +291,6 @@ async function ensureRaceParticipants(page, raceId, participants, options = {}) 
       expect(row.term).toBe(String(participant.term));
     }
 
-    verifiedParticipants[reg] = row;
   }
 
   return verifiedParticipants;
@@ -305,5 +326,6 @@ async function removeRaceParticipant(page, raceId, reg, options = {}) {
 module.exports = {
   ensureOrisRace,
   ensureRaceParticipants,
+  readRaceParticipants,
   removeRaceParticipant,
 };

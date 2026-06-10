@@ -111,6 +111,11 @@ test.describe(ORIS_MOCKUP_RACE_WORKFLOW.name, () => {
     state.mockRace = await createOrisMockRace(request, {
       name: `Playwright ORIS mockup ${state.run.runId}`,
       place: 'Playwright proxy arena',
+      classes: [
+        { Name: 'H21', Fee: 150 },
+        { Name: 'D21', Fee: 150 },
+        { Name: 'H35', Fee: 150 },
+      ],
     });
     state.orisId = String(state.mockRace.race.ID);
   });
@@ -121,7 +126,8 @@ test.describe(ORIS_MOCKUP_RACE_WORKFLOW.name, () => {
     state.race = await ensureOrisRace(page, state.orisId);
     const orisEvent = await getOrisApiEvent(request, state.orisId);
 
-    expect(Number(state.race.extId)).toBeGreaterThan(25000);
+    expect(Number(state.race.extId)).toBeGreaterThanOrEqual(25000);
+    expect(Number(state.race.extId)).toBeLessThanOrEqual(999999);
     expect(state.race.extId).toBe(state.orisId);
     expect(state.race.name).toBe(state.mockRace.race.Name);
     expect(state.race.id).toBeTruthy();

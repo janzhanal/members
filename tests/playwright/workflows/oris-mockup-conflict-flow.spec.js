@@ -122,6 +122,10 @@ test.describe(ORIS_MOCKUP_CONFLICT_WORKFLOW.name, () => {
     state.mockRace = await createOrisMockRace(request, {
       name: `Playwright ORIS mockup conflict ${state.run.runId}`,
       place: 'Playwright conflict arena',
+      classes: [
+        { Name: 'H21', Fee: 150 },
+        { Name: 'H35', Fee: 150 },
+      ],
     });
     state.orisId = String(state.mockRace.race.ID);
   });

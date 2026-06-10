@@ -1,5 +1,5 @@
 const DEFAULT_ORIS_MOCK_ADMIN_URL = process.env.PLAYWRIGHT_ORIS_MOCK_ADMIN_URL
-  || 'http://127.0.0.1:10301/__admin/api';
+  || 'http://127.0.0.1:10301/__testbench/api';
 const DEFAULT_ORIS_MOCK_API_URL = process.env.PLAYWRIGHT_ORIS_MOCK_API_URL
   || 'http://127.0.0.1:10301/API/';
 
@@ -51,7 +51,6 @@ async function setOrisMockSettings(request, overrides = {}) {
 }
 
 async function createOrisMockRace(request, overrides = {}) {
-  const eventId = overrides.id || overrides.ID;
   const hasClasses = overrides.classes !== undefined || overrides.Classes !== undefined;
   const defaults = {
     name: 'Playwright ORIS mock race',
@@ -59,10 +58,10 @@ async function createOrisMockRace(request, overrides = {}) {
     entryDate1: orisDateTimePlus(20),
   };
 
-  if (eventId && !hasClasses) {
+  if ( !hasClasses) {
     defaults.classes = [
-      { ID: `${eventId}01`, Name: 'H21C', Fee: 150 },
-      { ID: `${eventId}02`, Name: 'D21C', Fee: 150 },
+      { Name: 'H21C', Fee: 150 },
+      { Name: 'D21C', Fee: 150 },
     ];
   }
 

@@ -522,6 +522,10 @@ async function findRaceUserIdByReg(page, raceId, options = {}) {
 }
 
 async function createRace(page, request, overrides = {}) {
+  if (overrides.categories === undefined) {
+    throw new Error('Create race requires categories');
+  }
+
   await page.goto('./race_new.php?type=0');
 
   const result = await postFormInSession(page, './race_new_exc.php?rtype=0', {
@@ -544,7 +548,7 @@ async function createRace(page, request, overrides = {}) {
     prihlasky3: '',
     prihlasky4: '',
     prihlasky5: '',
-    kategorie: overrides.categories || 'D10N;D12;D14;D16;D18;D21C;D21D;D35;D45;D55;H10N;H12;H14;H16;H18;H21C;H21D;H35;H45;H55;HDR;',
+    kategorie: overrides.categories,
     ...overrides.fields,
   });
 
