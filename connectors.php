@@ -90,15 +90,10 @@ interface ConnectorInterface {
 }
 
 class OrisCZConnector implements ConnectorInterface {
-	private $sourceUrl;
-	private $apiUrl;
 	private $service;
 
 	public function __construct() {
-		global $g_oris_base_url;
-		$this->sourceUrl = $g_oris_base_url ?? 'https://oris.ceskyorientak.cz/';
-		$this->apiUrl    = $this->sourceUrl . 'API/';
-		$this->service   = new OrisIntegrationService(null, $this->apiUrl);
+		$this->service = OrisIntegrationServiceFactory::create();
 	}
 
 	public function getSystemName(): string {
@@ -106,7 +101,7 @@ class OrisCZConnector implements ConnectorInterface {
 	}
 
 	public function getRaceURL($raceId) : string {
-		return $this->sourceUrl . 'Zavod?id=' . $raceId;
+		return OrisIntegrationServiceFactory::getConfiguredBaseUrl() . 'Zavod?id=' . $raceId;
 	}
 
 	private function mapLevelToZebricek2($levelId) {
@@ -206,7 +201,7 @@ class OrisCZConnector implements ConnectorInterface {
 				'kategorie' => implode(';', array_keys($classFees)),
 				'startovne' => $classFees,
 				'cancelled' => (!empty($raceData['Cancelled']) || !empty($raceData['Canceled']) || !empty($raceData['cancelled']) || !empty($raceData['canceled'])) ? 1 : 0,
-				'oris_entry_start' => !empty($raceData['EntryStart']) ? $raceData['EntryStart'] : null,
+				'entry_start' => !empty($raceData['EntryStart']) ? $raceData['EntryStart'] : null,
 			]);
 		} catch (OrisException $e) {
 			return null;
@@ -256,21 +251,25 @@ class OrisCZConnector implements ConnectorInterface {
 					}
 				}
 			}
-		} catch (OrisException $e) { }
+		} catch (OrisException $e) {
+			// Ignore partial ORIS failures and keep current null/partial behavior.
+		}
 
 		try {
 			$serviceEntries = $this->service->getEventServiceEntries($raceId, $g_external_is_club_id);
-			if ($racePayement === null) $racePayement = new RacePayement($raceId);
+			if ( $racePayement ===  null ) $racePayement = new RacePayement($raceId);
 			foreach ($serviceEntries as $entry) {
-				if (isset($entry['Service'])) {
-					$racePayement->addService($entry['Service']['NameCZ'] ?? 'Name?', $entry['Service']['UnitPrice'], $entry['Quantity']);
+				if ( isset ( $entry['Service'] ) ) {
+					$racePayement->addService($entry['Service']['NameCZ'] ?? 'Name?', $entry['Service']['UnitPrice'] , $entry['Quantity'] );
 				} else {
 					if (isset($entry['Quantity']) && isset($entry['TotalFee'])) {
 						$racePayement->addService('Name?', $entry['TotalFee'] / $entry['Quantity'], $entry['Quantity']);
 					}
 				}
 			}
-		} catch (OrisException $e) { }
+		} catch (OrisException $e) {
+			// Ignore partial ORIS failures and keep current null/partial behavior.
+		}
 
 		return $racePayement;
 	}

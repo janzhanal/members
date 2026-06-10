@@ -45,7 +45,7 @@ if (!$entry_lock)
 			if ($vysledek !== false) {
 				global $g_oris_club_key;
 				if (!empty($g_oris_club_key)) {
-					$service = OrisIntegrationService::create();
+					$service = OrisIntegrationServiceFactory::create();
 					$rowQuery = query_db("SELECT * FROM `" . TBL_ZAVXUS . "` WHERE `id` = '$zx_id'");
 					if ($rowQuery && $syncRow = mysqli_fetch_assoc($rowQuery)) {
 						$syncRes = processEntry($syncRow, 'delete', $service);

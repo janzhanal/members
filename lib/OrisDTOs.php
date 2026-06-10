@@ -27,10 +27,14 @@ class RaceDTO {
     public ?string $kategorie;
     public $startovne;
     public ?int $cancelled;
-    public ?string $oris_entry_start;
+    public ?string $entry_start;
     public ?string $typ0;
 
-    public function __construct(array $data) {
+    public function __construct($data = []) {
+        if (!is_array($data)) {
+            $data = [];
+        }
+
         $this->ext_id = $data['ext_id'] ?? null;
         $this->datum = $data['datum'] ?? null;
         $this->datum2 = $data['datum2'] ?? null;
@@ -57,7 +61,7 @@ class RaceDTO {
         $this->kategorie = $data['kategorie'] ?? null;
         $this->startovne = $data['startovne'] ?? null;
         $this->cancelled = $data['cancelled'] ?? null;
-        $this->oris_entry_start = $data['oris_entry_start'] ?? null;
+        $this->entry_start = $data['entry_start'] ?? null;
         $this->typ0 = $data['typ0'] ?? null;
     }
 }

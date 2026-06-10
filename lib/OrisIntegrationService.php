@@ -9,21 +9,54 @@ require_once __DIR__ . '/OrisDTOs.php';
 
 class OrisIntegrationService {
 
-    private $apiUrl = 'https://oris.ceskyorientak.cz/API/';
+    public const DEFAULT_BASE_URL = 'https://oris.ceskyorientak.cz/';
+    private const CLUB_KEY_REQUIRED_METHODS = [
+        'createEntry' => true,
+        'updateEntry' => true,
+        'deleteEntry' => true,
+        'createServiceEntry' => true,
+        'updateServiceEntry' => true,
+        'deleteServiceEntry' => true,
+        'getClubEntryRights' => true,
+        'setClubEntryRights' => true,
+        'getClubUserList' => true,
+        'createPerson' => true,
+        'editPerson' => true,
+        'createClubUser' => true,
+        'editClubUser' => true,
+        'createUserLogin' => true,
+    ];
+
+    private $apiUrl;
     private $clubKey;
 
     public function __construct($clubKey = null, $apiUrl = null) {
-        $this->clubKey = $clubKey;
-        if ($apiUrl !== null) {
-            $this->apiUrl = $apiUrl;
-        }
+        $this->clubKey = empty($clubKey) ? null : $clubKey;
+        $this->apiUrl = self::normalizeApiUrl($apiUrl ?? (self::DEFAULT_BASE_URL . 'API/'));
     }
 
-    public static function create($apiUrl = null): self {
-        global $g_oris_club_key;
-        return new self($g_oris_club_key ?? null, $apiUrl);
+    public function hasClubKey() {
+        return !empty($this->clubKey);
     }
-    
+
+    public function getApiUrl() {
+        return $this->apiUrl;
+    }
+
+    public static function normalizeApiUrl($apiUrl) {
+        $apiUrl = trim((string)$apiUrl);
+        if ($apiUrl === '') {
+            return self::DEFAULT_BASE_URL . 'API/';
+        }
+
+        $apiUrl = rtrim($apiUrl, '/');
+        if (preg_match('#/API$#i', $apiUrl)) {
+            return $apiUrl . '/';
+        }
+
+        return $apiUrl . '/API/';
+    }
+
     private function log(string $msg): void {
         $line = '[' . date('Y-m-d H:i:s') . '] ' . $msg . "\n";
         file_put_contents(__DIR__ . '/../logs/oris_sync.log', $line, FILE_APPEND | LOCK_EX);
@@ -33,9 +66,14 @@ class OrisIntegrationService {
      * Internal generic HTTP request method.
      */
     private function makeRequest($method, $params = [], $isPost = false) {
+        $requiresClubKey = isset(self::CLUB_KEY_REQUIRED_METHODS[$method]);
+        if ($requiresClubKey && !$this->hasClubKey()) {
+            throw new OrisValidationException("ORIS method '{$method}' requires configured clubkey.");
+        }
+
         $params['method'] = $method;
         $params['format'] = 'json';
-        if ($this->clubKey) {
+        if ($requiresClubKey) {
             $params['clubkey'] = $this->clubKey;
         }
 
@@ -129,6 +167,22 @@ class OrisIntegrationService {
         return $this->makeRequest('deleteEntry', ['entryid' => $entryId], true);
     }
 
+    public function createPerson(array $params) {
+        return $this->makeRequest('createPerson', $params, true);
+    }
+
+    public function editPerson(array $params) {
+        return $this->makeRequest('editPerson', $params, true);
+    }
+
+    public function createClubUser(array $params) {
+        return $this->makeRequest('createClubUser', $params, true);
+    }
+
+    public function editClubUser(array $params) {
+        return $this->makeRequest('editClubUser', $params, true);
+    }
+
     // --- Read-Only and Protected Read Endpoints (Phase A & B) ---
 
     public function getUser($rgnum) {
@@ -141,13 +195,17 @@ class OrisIntegrationService {
 
     public function getEventEntries($eventId, $clubId = null) {
         $params = ['eventid' => $eventId];
-        if ($clubId !== null) { $params['clubid'] = $clubId; }
+        if (!empty($clubId)) {
+            $params['clubid'] = $clubId;
+        }
         return $this->makeRequest('getEventEntries', $params);
     }
 
     public function getEventServiceEntries($eventId, $clubId = null) {
         $params = ['eventid' => $eventId];
-        if ($clubId !== null) { $params['clubid'] = $clubId; }
+        if (!empty($clubId)) {
+            $params['clubid'] = $clubId;
+        }
         return $this->makeRequest('getEventServiceEntries', $params);
     }
 
@@ -168,5 +226,58 @@ class OrisIntegrationService {
             'sport' => $sport,
             'year' => $year
         ]);
+    }
+}
+
+class OrisIntegrationServiceFactory {
+
+    public static function create() {
+        return new OrisIntegrationService(
+            self::getConfiguredClubKey(),
+            self::getApiUrl(self::getConfiguredBaseUrl())
+        );
+    }
+
+    public static function getConfiguredClubKey() {
+        global $g_oris_club_key;
+
+        return empty($g_oris_club_key) ? null : $g_oris_club_key;
+    }
+
+    public static function getConfiguredBaseUrl() {
+        global $g_oris_base_url, $g_oris_api_url;
+
+        if (!empty($g_oris_base_url)) {
+            return self::normalizeBaseUrl($g_oris_base_url);
+        }
+
+        if (!empty($g_oris_api_url)) {
+            return self::normalizeBaseUrl(preg_replace('#/API/?$#i', '', $g_oris_api_url));
+        }
+
+        return OrisIntegrationService::DEFAULT_BASE_URL;
+    }
+
+    public static function getConfiguredApiUrl() {
+        return self::getApiUrl(self::getConfiguredBaseUrl());
+    }
+
+    private static function getApiUrl($baseUrl = null) {
+        if ($baseUrl === null || trim((string)$baseUrl) === '') {
+            return OrisIntegrationService::DEFAULT_BASE_URL . 'API/';
+        }
+
+        return OrisIntegrationService::normalizeApiUrl($baseUrl);
+    }
+
+    private static function normalizeBaseUrl($baseUrl) {
+        $baseUrl = trim((string)$baseUrl);
+        if ($baseUrl === '') {
+            return OrisIntegrationService::DEFAULT_BASE_URL;
+        }
+
+        $baseUrl = preg_replace('#/API/?$#i', '', $baseUrl);
+
+        return rtrim($baseUrl, '/') . '/';
     }
 }

@@ -92,9 +92,9 @@ function processEntry($row, $action, $service) {
     }
 
     // Check if ORIS entries are open yet
-    $orisEntryStart = $raceRow['oris_entry_start'] ?? null;
-    if (!empty($orisEntryStart)) {
-        $entryStartTs = strtotime($orisEntryStart);
+    $entryStart = $raceRow['entry_start'] ?? null;
+    if (!empty($entryStart)) {
+        $entryStartTs = strtotime($entryStart);
         if ($entryStartTs !== false && $entryStartTs > time()) {
             return 'not_open';
         }
@@ -182,7 +182,7 @@ function processEntry($row, $action, $service) {
                 $response = $service->createEntry($createDto);
             }
         } elseif ($action === 'update') {
-            $entryIdToUpdate = $row['oris_entry_id'] ?? null;
+            $entryIdToUpdate = $row['entry_id'] ?? null;
 
             if (empty($entryIdToUpdate) && !empty($comp) && !empty($clubuser)) {
                 try {
@@ -209,7 +209,7 @@ function processEntry($row, $action, $service) {
                 $response = $service->updateEntry($updateDto);
             }
         } elseif ($action === 'delete') {
-            $entryIdToDelete = $row['oris_entry_id'] ?? null;
+            $entryIdToDelete = $row['entry_id'] ?? null;
 
             if (empty($entryIdToDelete) && !empty($comp) && !empty($clubuser)) {
                 try {
@@ -241,14 +241,14 @@ function processEntry($row, $action, $service) {
             } elseif ($action === 'update' && !empty($existingEntryId)) {
                 $entryId = $existingEntryId;
             } else {
-                $entryId = $row['oris_entry_id'];
+                $entryId = $row['entry_id'];
             }
         }
 
         if ($action === 'delete') {
             query_db("DELETE FROM `" . TBL_ZAVXUS . "` WHERE `id` = " . (int)$id);
         } else {
-            query_db("UPDATE `" . TBL_ZAVXUS . "` SET `sync_status` = 'SYNCED', `oris_entry_id` = " . ($entryId ? (int)$entryId : "NULL") . ", `sync_timestamp` = NOW(), `sync_error_payload` = NULL WHERE `id` = " . (int)$id);
+            query_db("UPDATE `" . TBL_ZAVXUS . "` SET `sync_status` = 'SYNCED', `entry_id` = " . ($entryId ? (int)$entryId : "NULL") . ", `sync_timestamp` = NOW(), `sync_error_payload` = NULL WHERE `id` = " . (int)$id);
         }
         return true;
 
