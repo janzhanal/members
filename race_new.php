@@ -298,6 +298,7 @@ if($type == 1)
 </TR>
 </TABLE>
 <input type="hidden" id="kategorie" name="kategorie" value="<? echo ($raceInfo->kategorie); ?>">
+<input type="hidden" name="oris_entry_start" value="<?= htmlspecialchars($raceInfo->oris_entry_start ?? '') ?>">
 </FORM>
 
 <?
