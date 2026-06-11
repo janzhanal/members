@@ -219,67 +219,6 @@ if ($has_ext_id && count($sync_queue) > 0) {
 	}
 }
 
-$sync_errors = [];
-$sync_warns = [];
-if ($has_ext_id && count($sync_queue) > 0) {
-	global $g_oris_club_key, $g_shortcut;
-	if (!empty($g_oris_club_key)) {
-		$service = OrisIntegrationService::create();
-		foreach ($sync_queue as $sq) {
-			$rowQuery = query_db("SELECT z.*, u.reg FROM `" . TBL_ZAVXUS . "` z LEFT JOIN `" . TBL_USER . "` u ON z.id_user = u.id WHERE z.`id` = " . (int)$sq['id']);
-			if ($rowQuery && $syncRow = mysqli_fetch_assoc($rowQuery)) {
-				$regNum = $syncRow['reg'] ?? $sq['id'];
-				if (!empty($regNum) && !preg_match('/^[A-Z]{3}/', $regNum) && $regNum != $sq['id']) {
-					$regNum = $g_shortcut . str_pad($regNum, 4, '0', STR_PAD_LEFT);
-				}
-				$displayName = "Reg.č. " . $regNum;
-
-				if ($sq['action'] === 'delete') {
-					$syncRes = processEntry($syncRow, 'delete', $service);
-					if ($syncRes === true || $syncRes === 'queued' || $syncRes === 'not_open') {
-						query_db("UPDATE ".TBL_RACE." SET prihlasenych = GREATEST(0, prihlasenych - 1) WHERE id = '$id'");
-						if ($syncRes === 'queued') {
-							$sync_warns[] = $displayName . ": Zrušení v ORIS se nezdařilo (síťová chyba) — zkuste to prosím znovu.";
-						} elseif ($syncRes === 'not_open') {
-							$sync_warns[] = $displayName . ": Zrušení v ORIS proběhne, až se otevře přihlašovací termín.";
-						}
-					} else {
-						$sync_errors[] = $displayName . ": " . getOrisSyncError($sq['id']);
-						if (isset($sq['previous_state'])) {
-							$prev_sync_status = correct_sql_string($sq['previous_state']['sync_status']);
-							query_db("UPDATE ".TBL_ZAVXUS." SET sync_status='$prev_sync_status' WHERE id='{$sq['id']}'");
-						}
-					}
-				} else {
-					$syncRes = processEntry($syncRow, $sq['action'], $service);
-					if ($syncRes === 'not_open') {
-						$sync_warns[] = $displayName . ": Přihláška uložena. Přihlašování na ORIS ještě nezačalo — odešlete ji znovu, až se termín přihlášek otevře.";
-					} elseif ($syncRes === 'queued') {
-						$sync_warns[] = $displayName . ": Přihláška uložena. Synchronizace s ORIS se nezdařila (síťová chyba) — zkuste to prosím znovu.";
-					} elseif ($syncRes !== true && $syncRes !== null) {
-						$sync_errors[] = $displayName . ": " . getOrisSyncError($sq['id']);
-						if (!empty($sq['is_new_insert'])) {
-							query_db("DELETE FROM ".TBL_ZAVXUS." WHERE id = '{$sq['id']}'");
-							query_db("UPDATE ".TBL_RACE." SET prihlasenych = GREATEST(0, prihlasenych - 1) WHERE id = '$id'");
-						} else if (isset($sq['previous_state'])) {
-							$prev_kat = correct_sql_string($sq['previous_state']['kat']);
-							$prev_pozn = correct_sql_string($sq['previous_state']['pozn']);
-							$prev_pozn_in = correct_sql_string($sq['previous_state']['pozn_in']);
-							$prev_termin = (int)$sq['previous_state']['termin'];
-							$prev_transport = (int)$sq['previous_state']['transport'];
-							$prev_sedadel = (!isset($sq['previous_state']['sedadel']) || $sq['previous_state']['sedadel'] === null) ? 'null' : (int)$sq['previous_state']['sedadel'];
-							$prev_ubytovani = (!isset($sq['previous_state']['ubytovani']) || $sq['previous_state']['ubytovani'] === null) ? 'null' : (int)$sq['previous_state']['ubytovani'];
-							$prev_sync_status = correct_sql_string($sq['previous_state']['sync_status']);
-
-							query_db("UPDATE ".TBL_ZAVXUS." SET kat='$prev_kat', pozn='$prev_pozn', pozn_in='$prev_pozn_in', termin='$prev_termin', transport=$prev_transport, sedadel=$prev_sedadel, ubytovani=$prev_ubytovani, sync_status='$prev_sync_status' WHERE id='{$sq['id']}'");
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
 ?>
 <?php
 $return_url = ($gr_id != 0) ? $g_baseadr.'race_regs_all.php?gr_id='.$gr_id.'&id='.$id : $g_baseadr.'race_regs_all.php?id='.$id;
