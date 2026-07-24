@@ -335,7 +335,7 @@ A.adr_name:HOVER {
 }
 
 TD.login {
-	color : <? echo $g_colors['nav_member_text']; ?>;
+	color : <? echo $g_colors['body_text']; ?>;
 	vertical-align : middle;
 	font-weight : bold;
 	text-align : right;

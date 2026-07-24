@@ -7,8 +7,8 @@ DrawPageTitle('Administrace stránek oddílu');
 <? DrawPageSubTitle('Speciální pomocné "funkce"'); ?>
 <B>! Používejte jen pokud víte co činíte !</B><BR>
 
-<A HREF="srv_repair_regs_db.php" class="NaviColSm">Oprava tabulky registrací na závody.</A><BR>
-<A HREF="_SQL/zmeny.sql.php" class="NaviColSm" target="_blank">Úpravy databáze (patche,updaty)</A><BR>
+<A HREF="srv_repair_regs_db.php">Oprava tabulky registrací na závody.</A><BR>
+<A HREF="_SQL/zmeny.sql.php" target="_blank">Úpravy databáze (patche,updaty)</A><BR>
 
 <BR><hr>
 

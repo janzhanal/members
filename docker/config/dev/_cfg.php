@@ -73,7 +73,7 @@ $g_mail_in_public_directory = true;
 $g_enable_race_boss = true;
 
 $g_club_logo['FileN'] = 'logo.png';
-$g_club_logo['SizeH'] = 60;
+$g_club_logo['SizeH'] = 68;
 $g_club_logo['SizeW'] = 156;
 
 $g_enable_mailinfo = true;
@@ -81,7 +81,7 @@ $g_mailinfo_minimal_daysbefore = 1;
 $g_mailinfo_maximal_daysbefore = 14;
 
 // nastaveni barevneho profilu
-$g_color_profile = '_colors_black_blue.php';
+$g_color_profile = '_colors_white_red.php';
 
 // finance
 $g_enable_finances = true;

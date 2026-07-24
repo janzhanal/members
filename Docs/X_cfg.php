@@ -71,7 +71,7 @@ $g_mail_in_public_directory = true;
 $g_enable_race_boss = true;
 
 $g_club_logo['FileN'] = 'logo.png';
-$g_club_logo['SizeH'] = 60;
+$g_club_logo['SizeH'] = 68;
 $g_club_logo['SizeW'] = 156;
 
 $g_enable_mailinfo = true;
