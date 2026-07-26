@@ -133,6 +133,11 @@ test.describe('Claim notification emails', () => {
       });
       const paymentId = await getPaymentIdForMember(accountantPage, accountantEntry.userId);
 
+      // The first test in this describe block (mode: 'serial') runs before this one and
+      // already triggers at least one claim-notification email, so the log file is
+      // guaranteed to exist by now. Assert that explicitly so a wrong EMAIL_LOG_PATH
+      // fails loudly instead of letting before/after both be 0 and passing vacuously.
+      expect(fs.existsSync(EMAIL_LOG_PATH)).toBe(true);
       const before = readEmailLogLines().length;
       await submitClaim(accountantPage, paymentId, 'Reklamace na vlastní platbu.');
       const after = readEmailLogLines();

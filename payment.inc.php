@@ -83,8 +83,9 @@ function _GetFinanceAdminRecipients()
 /*
  * posli email o zalozeni reklamace (vlastnik plati) nebo o odpovedi na ni (financnik odpovida)
  * $actor_user_id - kdo pridal novy radek do vlakna reklamace (createClaim, ne updateClaim)
+ * $claim_text - text prave vlozene reklamace/odpovedi (predano volajicim, aby se predeslo nejednoznacne re-query dle timestampu)
  */
-function NotifyClaimEvent($payment_id, $actor_user_id)
+function NotifyClaimEvent($payment_id, $actor_user_id, $claim_text)
 {
 	global $g_baseadr, $g_fullname, $g_emailadr;
 
@@ -98,10 +99,6 @@ function NotifyClaimEvent($payment_id, $actor_user_id)
 
 	$owner_id = (int)$payment['id_users_user'];
 	$editor_id = (int)$payment['id_users_editor'];
-
-	$result_claim = query_db("select text from ".TBL_CLAIM." where payment_id = $payment_id order by date desc limit 1");
-	$claim = mysqli_fetch_array($result_claim);
-	$claim_text = $claim ? $claim['text'] : '';
 
 	$payment_desc = 'Datum: '.formatDate($payment['date']).EMAIL_ENDL.'Částka: '.$payment['amount'].EMAIL_ENDL.'Poznámka: '.$payment['note'].EMAIL_ENDL;
 	$link = $g_baseadr.'claim.php?payment_id='.$payment_id;
