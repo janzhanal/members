@@ -500,7 +500,7 @@ function SendEmail($FromName, $FromA,$ToName,$ToA,$msg,$subject)
 	$extra_headers .= 'Reply-To: '.$name_from.EMAIL_ENDL;
 	$extra_headers .= 'X-Mailer: '.SYSTEM_NAME.'/'.GetCodeVersion();
 
-	$send = (bool) mail($name_to,email_mime_header_encode($subject),$msg,$extra_headers);
+	$send = (bool) @mail($name_to,email_mime_header_encode($subject),$msg,$extra_headers);
 	
 	// debug output to file
 	$fp = fopen(dirname(__FILE__) .'/logs/email_log.txt', 'a');
