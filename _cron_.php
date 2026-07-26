@@ -42,7 +42,7 @@ require_once (dirname(__FILE__) .'/common_rg_race.inc.php');
 require_once (dirname(__FILE__) .'/version.inc.php');
 require_once (dirname(__FILE__) .'/payment.inc.php');
 
-define ('EMAIL_ENDL',"\n");
+if (!defined('EMAIL_ENDL')) define ('EMAIL_ENDL',"\n");
 define ('DIV_LINE','-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-');
 define ('DIV_LINE2','=====================================================================');
 //--------------------------------------------------------
