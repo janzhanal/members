@@ -2,6 +2,8 @@
 <?
 require_once './modify_log.inc.php';
 
+if (!defined('EMAIL_ENDL')) define('EMAIL_ENDL', "\n");
+
 /**
  * library for payments
 */
@@ -43,7 +45,120 @@ function closeClaim($claim_id, $payment_id)
 	query_db($query);
 }
 
-/* 
+/*
+ * vrat pole [{id, email, name}] pro dany user_id; prazdne pole pokud neexistuje nebo nema platny email
+ */
+function _GetClaimRecipient($user_id)
+{
+	$user_id = (IsSet($user_id) && is_numeric($user_id)) ? (int)$user_id : 0;
+	if ($user_id <= 0) return array();
+
+	$query = "select id, email, sort_name from ".TBL_USER." where id = $user_id limit 1";
+	$result = query_db($query);
+	$user = mysqli_fetch_array($result);
+	if (!$user || !IsValidEmail($user['email'])) return array();
+
+	return array(array('id' => (int)$user['id'], 'email' => $user['email'], 'name' => $user['sort_name']));
+}
+
+/*
+ * vrat pole [{id, email, name}] pro vsechny financniky (policy_fin = 1) s platnym emailem
+ */
+function _GetFinanceAdminRecipients()
+{
+	$recipients = array();
+	$query = "select u.id, u.email, u.sort_name from ".TBL_USER." u inner join ".TBL_ACCOUNT." a on a.id_users = u.id where a.policy_fin = 1";
+	$result = query_db($query);
+	if ($result)
+	{
+		while ($user = mysqli_fetch_array($result))
+		{
+			if (IsValidEmail($user['email']))
+				$recipients[] = array('id' => (int)$user['id'], 'email' => $user['email'], 'name' => $user['sort_name']);
+		}
+	}
+	return $recipients;
+}
+
+/*
+ * posli email o zalozeni reklamace (vlastnik plati) nebo o odpovedi na ni (financnik odpovida)
+ * $actor_user_id - kdo pridal novy radek do vlakna reklamace (createClaim, ne updateClaim)
+ * $claim_text - text prave vlozene reklamace/odpovedi (predano volajicim, aby se predeslo nejednoznacne re-query dle timestampu)
+ */
+function NotifyClaimEvent($payment_id, $actor_user_id, $claim_text)
+{
+	global $g_baseadr, $g_fullname, $g_emailadr;
+
+	$payment_id = (IsSet($payment_id) && is_numeric($payment_id)) ? (int)$payment_id : 0;
+	$actor_user_id = (IsSet($actor_user_id) && is_numeric($actor_user_id)) ? (int)$actor_user_id : 0;
+
+	$query = "select amount, note, date, id_users_user, id_users_editor from ".TBL_FINANCE." where id = $payment_id limit 1";
+	$result = query_db($query);
+	$payment = mysqli_fetch_array($result);
+	if (!$payment) return;
+
+	$owner_id = (int)$payment['id_users_user'];
+	$editor_id = (int)$payment['id_users_editor'];
+
+	$payment_desc = 'Datum: '.formatDate($payment['date']).EMAIL_ENDL.'Částka: '.$payment['amount'].EMAIL_ENDL.'Poznámka: '.$payment['note'].EMAIL_ENDL;
+	$link = $g_baseadr.'claim.php?payment_id='.$payment_id;
+
+	if ($actor_user_id == $owner_id)
+	{
+		$recipients = ($editor_id > 0) ? _GetClaimRecipient($editor_id) : _GetFinanceAdminRecipients();
+		$subject = 'Reklamace platby';
+		$msg = 'Dobrý den,'.EMAIL_ENDL.EMAIL_ENDL.'byla založena/aktualizována reklamace platby:'.EMAIL_ENDL.EMAIL_ENDL
+			.$payment_desc.EMAIL_ENDL.'Text reklamace:'.EMAIL_ENDL.$claim_text.EMAIL_ENDL.EMAIL_ENDL
+			.'Detail a odpověď: '.$link.EMAIL_ENDL;
+	}
+	else
+	{
+		$recipients = _GetClaimRecipient($owner_id);
+		$subject = 'Odpověď na reklamaci platby';
+		$msg = 'Dobrý den,'.EMAIL_ENDL.EMAIL_ENDL.'na vaši reklamaci platby přišla odpověď:'.EMAIL_ENDL.EMAIL_ENDL
+			.$payment_desc.EMAIL_ENDL.'Odpověď:'.EMAIL_ENDL.$claim_text.EMAIL_ENDL.EMAIL_ENDL
+			.'Detail: '.$link.EMAIL_ENDL;
+	}
+
+	foreach ($recipients as $recipient)
+	{
+		if ($recipient['id'] == $actor_user_id) continue; // neposilej sam sobe
+		SendEmail($g_fullname, $g_emailadr, $recipient['name'], $recipient['email'], $msg, $subject);
+	}
+}
+
+/*
+ * posli email o uzavreni reklamace vlastnikovi platby
+ */
+function NotifyClaimClosed($payment_id, $actor_user_id)
+{
+	global $g_baseadr, $g_fullname, $g_emailadr;
+
+	$payment_id = (IsSet($payment_id) && is_numeric($payment_id)) ? (int)$payment_id : 0;
+	$actor_user_id = (IsSet($actor_user_id) && is_numeric($actor_user_id)) ? (int)$actor_user_id : 0;
+
+	$query = "select amount, note, date, id_users_user from ".TBL_FINANCE." where id = $payment_id limit 1";
+	$result = query_db($query);
+	$payment = mysqli_fetch_array($result);
+	if (!$payment) return;
+
+	$owner_id = (int)$payment['id_users_user'];
+	if ($owner_id == $actor_user_id) return; // neposilej sam sobe
+
+	$payment_desc = 'Datum: '.formatDate($payment['date']).EMAIL_ENDL.'Částka: '.$payment['amount'].EMAIL_ENDL.'Poznámka: '.$payment['note'].EMAIL_ENDL;
+	$link = $g_baseadr.'claim.php?payment_id='.$payment_id;
+
+	$subject = 'Reklamace platby vyřešena';
+	$msg = 'Dobrý den,'.EMAIL_ENDL.EMAIL_ENDL.'vaše reklamace platby byla uzavřena:'.EMAIL_ENDL.EMAIL_ENDL
+		.$payment_desc.EMAIL_ENDL.'Detail: '.$link.EMAIL_ENDL;
+
+	foreach (_GetClaimRecipient($owner_id) as $recipient)
+	{
+		SendEmail($g_fullname, $g_emailadr, $recipient['name'], $recipient['email'], $msg, $subject);
+	}
+}
+
+/*
  * vytvor platbu
  * params: amount, user_id (target of money) ...
  *

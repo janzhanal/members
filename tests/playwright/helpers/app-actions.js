@@ -367,6 +367,21 @@ async function setMemberSmallManager(page, userId, smallManagerId) {
   return ensureHtmlSubmission(result, `Assign small manager for user ${userId}`);
 }
 
+async function setMemberEmail(page, userId, email) {
+  if (!userId) {
+    throw new Error('Cannot set member email without a user id');
+  }
+
+  await page.goto(`./user_edit.php?id=${userId}`);
+  const form = await readFormState(page, 'form[action^="./user_new_exc.php"]');
+  const result = await postFormInSession(page, form.action, {
+    ...form.fields,
+    email,
+  });
+
+  return ensureHtmlSubmission(result, `Set email for user ${userId}`);
+}
+
 async function setMemberFinanceType(page, userId, financeType) {
   if (!userId) {
     throw new Error('Cannot set member finance type without a user id');
@@ -618,6 +633,7 @@ module.exports = {
   createRace,
   formatClubReg,
   getFinanceDirectoryEntryByReg,
+  setMemberEmail,
   setMemberFinanceType,
   setMemberSmallManager,
   stornoFirstMemberFinanceEntry,

@@ -10,6 +10,14 @@ $payment_id = (IsSet($payment_id) && is_numeric($payment_id)) ? (int)$payment_id
 
 require_once ("./connect.inc.php");
 require_once ("./sess.inc.php");
+
+if (!IsLoggedUser())
+{
+	header("location: ".$g_baseadr."error.php?code=21");
+	exit;
+}
+
+require_once ("./version.inc.php"); // SendEmail() (common.inc.php) potrebuje SYSTEM_NAME, ktere jinak nastavuje az header.inc.php - ale NotifyClaimEvent/NotifyClaimClosed se volaji drive
 require_once ("./common.inc.php");
 require_once 'payment.inc.php';
 
@@ -29,6 +37,7 @@ if (IsSet($submit) or IsSet($close))
  	if (IsSet($close))
  	{
  		closeClaim($record_last_claim['id'], $payment_id);
+		NotifyClaimClosed($payment_id, $user_id);
 		echo "<script>window.close();</script>";
  	} else {
  		if ($record_last_claim && $user_id == $record_last_claim['user_id'])
@@ -36,6 +45,7 @@ if (IsSet($submit) or IsSet($close))
  			updateClaim($record_last_claim['id'], $claim_text);
  		} else {
  			createClaim($user_id, $payment_id, $claim_text);
+ 			NotifyClaimEvent($payment_id, $user_id, $claim_text);
  		}
  	}
 }
