@@ -150,6 +150,24 @@ function toggle_expand_by_group(group,el) {
     }
 }
 
+function toggle_expand_by_class(cls, el) {
+    var lst = document.getElementsByClassName(cls);
+	var hidden = true;
+	for(var i = 0; i < lst.length; ++i) {
+		hidden = (lst[i].style.display == '');
+        lst[i].style.display=hidden?'none':''
+    }
+
+	// toggle arrow
+	const groupText = el.textContent;
+    if (groupText.includes('▲') || groupText.includes('▼')) {
+   		 el.textContent =
+            hidden
+                ? groupText.replace('▲', '▼')
+                : groupText.replace('▼', '▲');
+    }
+}
+
 // function toggleDisplayByToggleClass(cls) {
 // 	let elems = document.getElementsByClassName(cls)
 // 	Array.prototype.forEach.call(elems, function(el) {

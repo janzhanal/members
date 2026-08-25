@@ -495,6 +495,12 @@ TABLE.calendar TD.today
     font-size: 1.1em;
 }
 
+.month-expander {
+    cursor: pointer;
+    user-select: none;
+    font-weight: bold;
+}
+
 <?
 if (!$g_is_release)
 {

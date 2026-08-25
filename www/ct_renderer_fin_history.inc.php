@@ -21,6 +21,43 @@ class FinanceHistoryNoteRenderer implements IColumnContentRenderer {
     }
 }
 
+// Month expander break: renders a month heading (including its year) on
+// every month change.
+class MonthExpanderDetector implements IBreakRowDetector {
+    private const MONTHS = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen',
+        'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+
+    private static function monthKey(int $ts): string {
+        return date('Y-m', $ts);
+    }
+
+    public function needsBreak(array $prev, RowData $curr): bool {
+        return self::monthKey($prev['datum']) !== self::monthKey($curr->rec['datum']);
+    }
+
+    public function renderBreak(html_table_mc $tbl, RowData $row): string {
+        $ts = $row->rec['datum'];
+        $monthKey = self::monthKey($ts);
+        $arrow = $monthKey < date('Y-m') ? '▼' : '▲';
+        $monthLabel = self::MONTHS[(int)date('n', $ts) - 1].' '.date('Y', $ts);
+
+        return $tbl->get_info_row(
+            '<span class="month-expander" onclick="toggle_expand_by_class(\'month-'.$monthKey.'\', this)">'.$arrow.' '.$monthLabel.'</span>'
+        );
+    }
+
+    public static function rowAttrsExtender(RowData $row): array {
+        $monthKey = self::monthKey($row->rec['datum']);
+        $attrs = ['class' => 'month-'.$monthKey];
+
+        if ($monthKey < date('Y-m')) {
+            $attrs['style'] = 'display:none';
+        }
+
+        return $attrs;
+    }
+}
+
 class FinanceHistoryRendererFactory extends AColumnRendererFactory {
     public static function createColRenderer(string $column_name): IColumnContentRenderer {
         return match ($column_name) {
