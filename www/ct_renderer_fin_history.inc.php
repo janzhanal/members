@@ -23,12 +23,16 @@ class FinanceHistoryNoteRenderer implements IColumnContentRenderer {
 
 // Month expander break: renders a month heading (including its year) on
 // every month change.
-class MonthExpanderDetector implements IBreakRowDetector {
+class MonthExpanderDetector extends TimeRangeExpanderDetector {
     private const MONTHS = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen',
         'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 
     private static function monthKey(int $ts): string {
         return date('Y-m', $ts);
+    }
+
+    public function getRangeKey(array $record): string {
+        return self::monthKey((int)$record['datum']);
     }
 
     public function needsBreak(array $prev, RowData $curr): bool {
@@ -42,8 +46,17 @@ class MonthExpanderDetector implements IBreakRowDetector {
         $monthLabel = self::MONTHS[(int)date('n', $ts) - 1].' '.date('Y', $ts);
 
         return $tbl->get_info_row(
-            '<span class="month-expander" onclick="toggle_expand_by_class(\'month-'.$monthKey.'\', this)">'.$arrow.' '.$monthLabel.'</span>'
+            '<span class="time-range-expander month-expander" onclick="toggle_expand_by_class(\'month-'.$monthKey.'\', this)">'.$arrow.' '.$monthLabel.'</span>'
         );
+    }
+
+    protected function getRangeLabel(string $range): ?string {
+        $date = DateTimeImmutable::createFromFormat('!Y-m', $range);
+        if ($date === false || $date->format('Y-m') !== $range) {
+            return null;
+        }
+
+        return self::MONTHS[(int)$date->format('n') - 1].' '.$date->format('Y');
     }
 
     public static function rowAttrsExtender(RowData $row): array {
@@ -59,6 +72,13 @@ class MonthExpanderDetector implements IBreakRowDetector {
 }
 
 class FinanceHistoryRendererFactory extends AColumnRendererFactory {
+    public static function createHistoryTable(): RenderedTable {
+        $table = self::createTable();
+        $table->addColumns('datum', 'reg', 'name', 'editor_name', 'amount', 'zavod_datum', 'zavod_nazev', 'note');
+        $table->addBreak(new MonthExpanderDetector());
+        return $table;
+    }
+
     public static function createColRenderer(string $column_name): IColumnContentRenderer {
         return match ($column_name) {
             'datum' => new DateFieldRenderer($column_name),
