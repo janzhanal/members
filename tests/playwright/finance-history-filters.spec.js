@@ -100,6 +100,12 @@ test.describe('Finance history filters and lazy ranges', () => {
 
     await expect(page.locator('input[name="date_from"]')).not.toHaveValue('');
     await expect(page.locator('input[name="date_to"]')).not.toHaveValue('');
+    await page.locator('input[name="date_from"]').fill('');
+    await page.locator('input[name="date_to"]').fill('');
+    await page.getByRole('button', { name: 'Filtrovat' }).click();
+    await expect(page.locator('input[name="date_from"]')).not.toHaveValue('');
+    await expect(page.locator('input[name="date_to"]')).not.toHaveValue('');
+
     await page.locator('input[name="variable_symbol"]').fill('playwright-no-such-vs');
     await page.locator('input[name="amount_from"]').fill('123');
     await page.locator('input[name="amount_to"]').fill('456');

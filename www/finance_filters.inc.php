@@ -16,7 +16,7 @@ abstract class FinanceSqlFilter extends SqlFilter
     {
         $value = self::stringValue($input, $name, $default);
         if ($value === '') {
-            return '';
+            $value = $default;
         }
 
         $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
