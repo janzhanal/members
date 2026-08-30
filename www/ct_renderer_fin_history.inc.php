@@ -46,7 +46,7 @@ class MonthExpanderDetector extends TimeRangeExpanderDetector {
         $monthLabel = self::MONTHS[(int)date('n', $ts) - 1].' '.date('Y', $ts);
 
         return $tbl->get_info_row(
-            '<span class="time-range-expander month-expander" onclick="toggle_expand_by_class(\'month-'.$monthKey.'\', this)">'.$arrow.' '.$monthLabel.'</span>'
+            '<span class="time-range-expander month-expander" onclick="toggle_expand_by_group(\''.$monthKey.'\', this)">'.$arrow.' '.$monthLabel.'</span>'
         );
     }
 
@@ -61,7 +61,7 @@ class MonthExpanderDetector extends TimeRangeExpanderDetector {
 
     public static function rowAttrsExtender(RowData $row): array {
         $monthKey = self::monthKey($row->rec['datum']);
-        $attrs = ['class' => 'month-'.$monthKey];
+        $attrs = ['data-group' => $monthKey];
 
         if ($monthKey < date('Y-m')) {
             $attrs['style'] = 'display:none';

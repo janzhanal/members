@@ -8,7 +8,7 @@ function rangeHeading(page, range) {
 }
 
 function rangeRows(page, range) {
-  return page.locator(`tr[data-range="${range}"]`);
+  return page.locator(`tr[data-group="${range}"]`);
 }
 
 test.describe('Finance history filters and lazy ranges', () => {
@@ -91,7 +91,7 @@ test.describe('Finance history filters and lazy ranges', () => {
 
     const valid = await page.context().request.get('./fin_history_range.php?range=2020-10');
     expect(valid.status()).toBe(200);
-    expect(await valid.text()).toContain('data-range="2020-10"');
+    expect(await valid.text()).toContain('data-group="2020-10"');
   });
 
   test('preserves unmatched-bank-payment filters through prepared querying', async ({ page }) => {

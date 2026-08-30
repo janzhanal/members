@@ -197,7 +197,7 @@ abstract class TimeRangeExpanderDetector implements ITimeRangeExpander {
     }
 
     public function getRangeRowAttrs(RowData $row, bool $expanded): array {
-        $attrs = ['data-range' => $this->getRangeKey($row->rec)];
+        $attrs = ['data-group' => $this->getRangeKey($row->rec)];
         if (!$expanded) {
             $attrs['style'] = 'display:none';
         }
@@ -395,7 +395,8 @@ class RenderedTable {
                 ? $rangeExpander->getRangeRowAttrs($row, $rangeExpanded)
                 : [];
             if ($this->rowAttrsExt !== null) {
-                $rowAttrs = array_merge($rowAttrs, ($this->rowAttrsExt)($row));
+                // Range grouping and visibility are authoritative on key collisions.
+                $rowAttrs = array_merge(($this->rowAttrsExt)($row), $rowAttrs);
             }
             $rnd .= $tbl->get_new_row_arr($rowCells, $rowAttrs)."\n";
             $prev = $record;
